@@ -223,8 +223,9 @@
     </div>
     <div class="row">
       <span class="small" id="counts">—</span>
-      <button id="exportBtn" title="Export des listes (menaces, cibles, vulnérabilités) en YAML">Exporter YAML</button>
       <button id="importBtn" class="secondary" title="Importer des listes YAML (menaces, cibles, vulnérabilités)">Importer YAML</button>
+      <button id="exportBtn" title="Export des listes (menaces, cibles, vulnérabilités) en YAML">Exporter YAML</button>
+      <button id="exportODSBtn" class="secondary" title="Exporter les chemins trouvés vers un tableur ODS">Exporter ODS</button>
       <button id="simulateBtn" class="secondary" title="Lancer une simulation aléatoire">Simulation</button>
       <div class="sim-controls">
         <label class="small" for="simSpeed">Vitesse</label>
@@ -839,7 +840,7 @@ function exportYAML(){
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `envuln-${ts}.yml`;
+  a.download = `menvuln-${ts}.yml`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1082,8 +1083,12 @@ function findAllPaths() {
 
 /* ---------- Render Path List + UML ---------- */
 let selectedPath = null;
+let lastFoundPaths = [];
 
 function renderPaths(paths, sawCycles, truncated) {
+
+  lastFoundPaths = Array.isArray(paths) ? paths : [];
+  
   const box = el('pathList');
   if (!box) return;
   box.innerHTML = '';
@@ -1292,6 +1297,160 @@ let svg = `
   if (size) size.textContent = `${totalW}×${totalH}px`;
 }
 
+  function exportODS(){
+  if (!lastFoundPaths.length) {
+    alert('Aucun chemin au cache. Clique d’abord “Trouver tous les chemins”.');
+    return;
+  }
+
+  // utilitaires
+  const esc = s => String(s||'')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+
+  // ====== Feuille 1 : Chemins (une ligne par chemin) ======
+  const head1 = ['#','Menace','Moyens','Chaîne','Longueur','Finale','Vulnérabilités (résumé)'];
+  const rows1 = lastFoundPaths.map((p, idx) => {
+    const chain = p.nodes.map(n=>n.name).join(' → ');
+    const len = p.nodes.length;
+    const finale = len ? p.nodes[len-1].name : '';
+    const vulnResume = p.vulnsPerNode.map((vs,i)=>{
+      const n = p.nodes[i]?.name || '?';
+      return `[${n}: ${vs && vs.length ? vs.join(', ') : '—'}]`;
+    }).join(' ');
+    return [
+      String(idx+1),
+      p.threatName || '',
+      (p.means||[]).join(', ') || '—',
+      chain,
+      String(len),
+      finale,
+      vulnResume
+    ];
+  });
+
+  // ====== Feuille 2 : Détail (une ligne par étape) ======
+  const head2 = ['Chemin #','Étape','Cible','Finale ?','Vulnérabilités','Menace','Moyens'];
+  const rows2 = [];
+  lastFoundPaths.forEach((p, idx) => {
+    (p.nodes||[]).forEach((n,i)=>{
+      const vs = p.vulnsPerNode?.[i] || [];
+      rows2.push([
+        String(idx+1),
+        String(i+1),
+        n?.name || '',
+        (i === p.nodes.length-1) ? 'Oui' : 'Non',
+        vs.length ? vs.join(', ') : '—',
+        p.threatName || '',
+        (p.means||[]).join(', ') || '—'
+      ]);
+    });
+  });
+
+  // ====== Styles ODF (entête + zebra) ======
+  const styles = `
+  <office:styles>
+    <style:style style:name="hdr" style:family="table-cell">
+      <style:text-properties fo:font-weight="bold"/>
+      <style:table-cell-properties fo:background-color="#0b1730"/>
+    </style:style>
+    <style:style style:name="z1" style:family="table-cell">
+      <style:table-cell-properties fo:background-color="transparent"/>
+    </style:style>
+    <style:style style:name="z2" style:family="table-cell">
+      <style:table-cell-properties fo:background-color="#0f223f"/>
+    </style:style>
+    <style:style style:name="wrap" style:family="table-cell">
+      <style:paragraph-properties fo:margin="0"/>
+      <style:text-properties fo:font-size="10pt"/>
+    </style:style>
+    <style:style style:name="colWide" style:family="table-column">
+      <style:table-column-properties style:column-width="6.5cm"/>
+    </style:style>
+    <style:style style:name="colXL" style:family="table-column">
+      <style:table-column-properties style:column-width="12cm"/>
+    </style:style>
+  </office:styles>`;
+
+  // helpers pour colonnes & lignes
+  const mkColsChemins = `
+    <table:table-column table:style-name="colWide"/>
+    <table:table-column table:style-name="colWide"/>
+    <table:table-column table:style-name="colWide"/>
+    <table:table-column table:style-name="colXL"/>
+    <table:table-column/>
+    <table:table-column table:style-name="colWide"/>
+    <table:table-column table:style-name="colXL"/>
+  `;
+  const mkColsDetail = `
+    <table:table-column/>
+    <table:table-column/>
+    <table:table-column table:style-name="colWide"/>
+    <table:table-column/>
+    <table:table-column table:style-name="colXL"/>
+    <table:table-column table:style-name="colWide"/>
+    <table:table-column table:style-name="colWide"/>
+  `;
+
+  const mkRow = (cells, zebra=false) => {
+    const style = zebra ? 'z2' : 'z1';
+    return `<table:table-row>${
+      cells.map(c => `<table:table-cell office:value-type="string" table:style-name="${style}"><text:p>${esc(c)}</text:p></table:table-cell>`).join('')
+    }</table:table-row>`;
+  };
+
+  const mkHeader = (heads) => `
+    <table:table-header-rows>
+      <table:table-row>${
+        heads.map(h => `<table:table-cell office:value-type="string" table:style-name="hdr"><text:p>${esc(h)}</text:p></table:table-cell>`).join('')
+      }</table:table-row>
+    </table:table-header-rows>`;
+
+  // construire les tables
+  const table1 = `
+    <table:table table:name="Chemins">
+      ${mkColsChemins}
+      ${mkHeader(head1)}
+      ${rows1.map((r,i)=>mkRow(r, i%2===1)).join('')}
+    </table:table>
+  `;
+  const table2 = `
+    <table:table table:name="Détail">
+      ${mkColsDetail}
+      ${mkHeader(head2)}
+      ${rows2.map((r,i)=>mkRow(r, i%2===1)).join('')}
+    </table:table>
+  `;
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+  <office:document
+    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+    xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+    xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+    xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+    office:version="1.2"
+    office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+    ${styles}
+    <office:body>
+      <office:spreadsheet>
+        ${table1}
+        ${table2}
+      </office:spreadsheet>
+    </office:body>
+  </office:document>`.replace(/\s+$/gm,'');
+
+  const blob = new Blob([xml], { type: 'application/vnd.oasis.opendocument.spreadsheet' });
+  const ts = new Date().toISOString().replace(/[:.]/g,'-');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `menvuln-chemins-${ts}.fods`; // ODF plat (ouvrable comme ODS)
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),0);
+}
+
 
 /* ---------- Wiring UI ---------- */
 function wire() {
@@ -1368,6 +1527,7 @@ function wire() {
 
   // Import/Export (YAML + compat JSON)
   el('exportBtn').onclick = exportYAML;
+  el('exportODSBtn').onclick = exportODS;
   el('importBtn').onclick = () => el('importFile').click();
   el('importFile').onchange = (e) => {
     if (e.target.files.length) importDataFile(e.target.files[0]);
