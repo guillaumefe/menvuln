@@ -91,44 +91,52 @@ function setPlaybackEnabled(enabled) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Full wipe (used by Reset All and Restart)                                  */
+/* Full wipe (used by Reset All) — clears state + results + diagram + playback */
 /* -------------------------------------------------------------------------- */
 function resetAllApp() {
+  // 1) stop any running simulation & remove cursor
   try { simStop(); } catch {}
+  const cur = document.getElementById('__sim_cursor'); if (cur) cur.remove();
 
-  const cur = document.getElementById('__sim_cursor');
-  if (cur) cur.remove();
-
+  // 2) wipe domain state (attackers/targets/vulns/edges)
   StateMod.State.attackers = [];
   StateMod.State.targets   = [];
   StateMod.State.vulns     = [];
   StateMod.State.edges     = { direct: {}, lateral: {}, contains: {} };
 
+  // 3) storage + last-results cache
   try { clearLocal(); } catch {}
-
   lastResults = [];
   lastMeta = { cycles: false, truncated: false };
 
+  // 4) clear UI: results list, diagram area, size/status labels, inputs
   const resultsEl = el('results');    if (resultsEl) resultsEl.innerHTML = '';
-  const diagram = el('diagramBox');
+  const diagram   = el('diagramBox');
   if (diagram) {
     diagram.innerHTML = '';
     diagram.removeAttribute('style');
     const oldSvg = diagram.querySelector('svg'); if (oldSvg) oldSvg.remove();
-    const ph = document.createElement('div'); ph.className = 'small'; ph.textContent = 'Select a path → Diagram';
+    const ph = document.createElement('div');
+    ph.className = 'small';
+    ph.textContent = 'Select a path → Diagram';
     diagram.appendChild(ph);
   }
-
-  const svgSizeEl1 = el('svgSize'); if (svgSizeEl1) svgSizeEl1.textContent = '—';
-  const statusEl  = el('status');   if (statusEl)  statusEl.textContent = '—';
+  const svgSizeEl = el('svgSize'); if (svgSizeEl) svgSizeEl.textContent = '—';
+  const statusEl  = el('status');  if (statusEl)  statusEl.textContent  = '—';
 
   const inAtt = el('attackerName'); if (inAtt) inAtt.value = '';
   const inTar = el('targetName');   if (inTar) inTar.value = '';
   const inVul = el('vulnName');     if (inVul) inVul.value = '';
 
+  // 5) **critical** — clear playback dataset BEFORE resetting it,
+  //    otherwise playback_resetToStart() will re-render old diagram.
+  playback_setDataset([]);   // empties dataset and updates buttons
+  playback_resetToStart();   // pauses, index=0, does NOT re-render an old SVG now
+
+  // 6) disable playback controls & re-render lists/selectors
   setPlaybackEnabled(false);
+  setPlayPauseVisual(false);
   renderAllUI();
-  try { playback_resetToStart(); } catch {}
 }
 
 /* -------------------------------------------------------------------------- */
