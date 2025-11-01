@@ -12,112 +12,113 @@
 
   <!-- LEFT: Add-only -->
   <div class="panel" id="panelEntities">
-    <h3>Resources (Add only)</h3>
+    <h3>Ajout des entités</h3>
+    <div class="small">Les attaquants, cibles et vulnérabilités sont créés ici.</div>
 
     <div class="form-block">
-      <label>New attacker</label>
+      <label>Nouvel attaquant</label>
       <div class="row">
-        <input id="attackerName" placeholder="Attacker name">
-        <button id="btnAddAttacker">Add</button>
+        <input id="attackerName" placeholder="Nom attaquant">
+        <button id="btnAddAttacker">Ajouter</button>
       </div>
     </div>
 
     <div class="form-block">
-      <label>New target</label>
+      <label>Nouvelle cible</label>
       <div class="row">
-        <input id="targetName" placeholder="Target name">
-        <button id="btnAddTarget">Add</button>
+        <input id="targetName" placeholder="Nom cible">
+        <button id="btnAddTarget">Ajouter</button>
       </div>
     </div>
 
     <div class="form-block">
-      <label>New vulnerability</label>
+      <label>Nouvelle vulnérabilité</label>
       <div class="row">
-        <input id="vulnName" placeholder="Vulnerability name">
-        <button id="btnAddVuln">Add</button>
+        <input id="vulnName" placeholder="Nom vulnérabilité">
+        <button id="btnAddVuln">Ajouter</button>
       </div>
     </div>
 
     <hr>
     <div class="small">
-      The lists and associations are in the center panel.
+      Configurez les relations avec le panneau central.
     </div>
   </div>
 
-  <!-- CENTER: Entries → Exits → Targets → Details → Vuln Assoc → Links → Results -->
+  <!-- CENTER -->
   <div class="panel" id="panelAssociations">
-    <h3>Associations & compute</h3>
+    <h3>Configuration & Associations</h3>
+
+    <div class="small">Sélectionnez les entités pour définir leurs interactions.</div>
 
     <div class="row">
       <div class="col">
-        <label>Current attacker</label>
+        <label>Attaquant courant</label>
         <select id="selAttacker"></select>
       </div>
       <div class="col speed-col">
-        <label for="simSpeed">Simulation speed</label>
+        <label for="simSpeed">Vitesse simulation</label>
         <input id="simSpeed" type="range" min="0.2" max="3" step="0.1" value="1">
         <span id="simSpeedValue">×1.0</span>
       </div>
     </div>
 
-    <label>Attacker entry points (multi)</label>
+    <label>Entrées attaquant (multi)</label>
     <select multiple id="selEntriesAll" size="6"></select>
 
-    <label>Attacker exit points (multi)</label>
+    <label>Sorties attaquant (multi)</label>
     <select multiple id="selExitsAll" size="6"></select>
 
     <div class="row ceiling-row">
-      <label for="maxPaths">Path ceiling</label>
+      <label for="maxPaths">Limite de chemins</label>
       <input type="number" id="maxPaths" min="100" value="2000">
     </div>
 
     <hr>
 
-    <h3>Targets</h3>
-    <div id="targetList" class="list"></div>
+    <!-- Removed the "Targets" block entirely -->
 
-    <h3>Details / editor</h3>
-    <div id="details" class="col small">Select a target or attacker.</div>
+    <h3>Détails / Édition</h3>
+    <div id="details" class="col small">Sélectionnez une cible ou un attaquant.</div>
 
     <hr>
 
-    <!-- NEW: Vulnerability association BEFORE link creation -->
-    <h3>Vulnerabilities association</h3>
+    <h3>Association vulnérabilités</h3>
     <div class="row">
       <div class="col">
-        <label>Target</label>
+        <label>Cible</label>
         <select id="selTargetAssoc"></select>
       </div>
       <div class="col">
-        <label>Vulnerabilities (multi)</label>
+        <label>Vulnérabilités (multi)</label>
         <select id="selVulnsAssoc" multiple size="6"></select>
       </div>
     </div>
 
     <div class="row">
-      <button id="btnAttachVulns">Attach vulnerabilities</button>
-      <button id="btnDetachVulns" class="ghost">Detach vulnerabilities</button>
-      <span class="small" id="assocStatus">Pick a target and some vulnerabilities.</span>
+      <button id="btnAttachVulns">Associer</button>
+      <button id="btnDetachVulns" class="ghost">Dissocier</button>
+      <span class="small" id="assocStatus">Choisissez une cible et des vulnérabilités.</span>
     </div>
 
     <hr>
 
-    <h3>Target links</h3>
+    <h3>Liens entre cibles</h3>
     <div class="row">
       <select id="linkSource"></select>
       <select id="linkDest" multiple size="4"></select>
       <select id="linkType">
         <option value="direct">direct</option>
-        <option value="lateral">lateral</option>
-        <option value="contains">contains</option>
+        <option value="lateral">latéral</option>
+        <option value="contains">contient</option>
       </select>
     </div>
 
     <div class="row">
-      <button id="btnAddLink">Add link</button>
-      <button id="btnRemoveLink" class="ghost">Remove link</button>
-      <label><input type="checkbox" id="includeLateral" checked> include lateral</label>
-      <label><input type="checkbox" id="includeContains" checked> include contains</label>
+      <button id="btnAddLink">Ajouter lien</button>
+      <button id="btnRemoveLink" class="ghost">Supprimer lien</button>
+      <label><input type="checkbox" id="includeLateral" checked> inclure latéral</label>
+      <label><input type="checkbox" id="includeContains" checked> inclure contient</label>
     </div>
 
     <div id="linksInspector" class="small"></div>
@@ -125,7 +126,7 @@
     <hr>
 
     <div class="row top-actions">
-      <button id="btnFindPaths">Compute paths</button>
+      <button id="btnFindPaths">Calculer chemins</button>
       <button id="btnExportODS" class="ghost">Export ODS</button>
       <button id="btnImportJSON" class="ghost">Import JSON</button>
       <button id="btnExportJSON" class="ghost">Export JSON</button>
@@ -137,28 +138,28 @@
     <hr>
 
     <h3 style="display:flex;align-items:center;gap:10px">
-      Results
+      Résultats
       <label class="small" style="display:inline-flex;align-items:center;gap:6px">
         <input type="checkbox" id="chkOnlyVuln">
-        Only paths with vulns
+        Chemins vulnérables uniquement
       </label>
     </h3>
 
     <div id="results" class="path-list"></div>
   </div>
 
-  <!-- RIGHT: only Tutorial + Diagram -->
+  <!-- RIGHT -->
   <div class="panel" id="panelDetailsRight">
-    <h3>Tutorial</h3>
+    <h3>Tutoriel</h3>
     <ol id="tutorial" class="small"></ol>
 
     <hr>
 
-    <h3>Attack diagram</h3>
-    <div id="diagramBox" class="uml"><div class="small">Pick a path → Diagram</div></div>
+    <h3>Diagramme d’attaque</h3>
+    <div id="diagramBox" class="uml"><div class="small">Chemin sélectionné → Diagramme</div></div>
 
     <div class="row">
-      <button id="btnDownloadSVG" class="ghost">Download SVG</button>
+      <button id="btnDownloadSVG" class="ghost">Télécharger SVG</button>
       <span id="svgSize" class="small">—</span>
     </div>
   </div>
