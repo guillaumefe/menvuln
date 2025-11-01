@@ -58,12 +58,12 @@
     <h3>Configuration & Exploration</h3>
 
     <div class="row ceiling-row">
-      <!-- (Simulation speed and Path limit were moved to the right panel as requested) -->
+      <!-- (Simulation speed and Path limit moved to the right panel) -->
     </div>
 
     <hr>
 
-    <!-- NEW: Attacker selection (placed above entry points as requested) -->
+    <!-- Attacker selection -->
     <h3>Attacker selection</h3>
     <div class="small">Choose the current attacker.</div>
     <div class="row">
@@ -72,46 +72,39 @@
 
     <hr>
 
-    <!-- NEW: Entry points selection (before vuln association) -->
-    <h3>Attacker entry point</h3>
-    <div class="small">Select the elements (targets) that will serve as entry points for the attacker.</div>
+    <!-- Entry points selection -->
+    <h3>Attacker entry points</h3>
+    <div class="small">Select targets that act as entry points for the attacker.</div>
     <div class="row">
-      <!-- this select must be filled in JS with the list of targets -->
       <select id="selEntriesAll" multiple size="6"></select>
     </div>
     <div class="row">
-      <button id="btnSetEntries">Apply entry points</button>
       <button id="btnClearEntries" class="ghost">Clear selection</button>
-      <span id="entriesStatus" class="small">—</span>
     </div>
 
     <hr>
 
-    <!-- NEW: Exit points selection (just under entry points, as requested) -->
-    <h3>Attacker exit point</h3>
-    <div class="small">Select the elements (targets) that will serve as exit points for the attacker.</div>
+    <!-- Exit points selection -->
+    <h3>Attacker exit points</h3>
+    <div class="small">Select targets that act as exit points for the attacker.</div>
     <div class="row">
-      <!-- this select must be filled in JS with the list of targets -->
       <select id="selExitsAll" multiple size="6"></select>
     </div>
     <div class="row">
-      <button id="btnSetExits">Apply exit points</button>
       <button id="btnClearExits" class="ghost">Clear selection</button>
-      <span id="exitsStatus" class="small">—</span>
     </div>
 
     <hr>
 
-    <!-- Vulnerability association (separate selector + vuln selection) -->
+    <!-- Vulnerability association -->
     <h3>Vulnerabilities</h3>
-    <div class="small">Choose an item, then select/deselect the vulnerabilities to associate with it.</div>
+    <div class="small">Pick an element, then select/unselect the vulnerabilities to associate.</div>
 
     <div class="row">
       <div class="col">
-        <label>Item to edit</label>
-        <!-- selector to choose the item (e.g., a target) that will receive vulnerabilities -->
+        <label>Element to edit</label>
         <select id="selVulnElement">
-          <!-- filled by JS: options (targets, possibly attackers as needed) -->
+          <!-- filled by JS -->
         </select>
       </div>
 
@@ -122,9 +115,7 @@
     </div>
 
     <div class="row">
-      <button id="btnAttachVulns">Attach vulnerabilities</button>
-      <button id="btnDetachVulns" class="ghost">Detach vulnerabilities</button>
-      <span class="small" id="assocStatus">Select an item and vulnerabilities.</span>
+      <button id="btnClearVulnSelection" class="ghost">Clear selection</button>
     </div>
 
     <hr>
@@ -142,8 +133,9 @@
     </div>
 
     <div class="row">
-      <button id="btnAddLink">Add link</button>
-      <button id="btnRemoveLink" class="ghost">Remove link</button>
+      <button id="btnClearLinkSelection" class="ghost">Clear selection</button>
+    </div>
+    <div class="row">
       <label><input type="checkbox" id="includeLateral" checked> include lateral</label>
       <label><input type="checkbox" id="includeContains" checked> include contains</label>
     </div>
@@ -180,11 +172,35 @@
   <!-- RIGHT PANEL — Tutorial + Configuration + Diagram -->
   <div class="panel" id="panelDetailsRight">
     <h3>Tutorial</h3>
-    <ol id="tutorial" class="small"></ol>
+    <ol id="tutorial" class="small">
+      <li>Add attackers, targets, and vulnerabilities in the left panel.</li>
+      <li>Select the current attacker from “Attacker selection”.</li>
+      <li>Choose attacker entry points, then use “Clear selection” if needed.</li>
+      <li>Choose attacker exit points, then use “Clear selection” if needed.</li>
+      <li>Select an element and pick vulnerabilities to associate; use “Clear selection” to reset.</li>
+      <li>Configure links between targets; use “Clear selection” to reset the link pickers.</li>
+      <li>Adjust path visibility (include lateral/contains) using the checkboxes.</li>
+      <li>Click “Compute paths” to generate results.</li>
+      <li>Select a path to view the attack diagram.</li>
+      <li>Use the playback controls to play, pause, stop, restart, step back, or step forward the simulation.</li>
+      <li>Export or import data as needed (JSON/ODS).</li>
+    </ol>
 
     <hr>
 
-    <!-- MOVED: Configuration (Simulation speed & Path limit) -->
+    <!-- Playback controls (above simulation speed) -->
+    <h3>Playback</h3>
+    <div class="row">
+      <button id="btnPlayPause">Play</button>
+      <button id="btnStop" class="ghost">Stop</button>
+      <button id="btnRestart" class="ghost">Restart</button>
+      <button id="btnStepBack" class="ghost">Step back</button>
+      <button id="btnStepForward" class="ghost">Step forward</button>
+    </div>
+
+    <hr>
+
+    <!-- Configuration (Simulation speed & Path limit) -->
     <h3>Configuration</h3>
     <div class="row">
       <div class="col speed-col">
