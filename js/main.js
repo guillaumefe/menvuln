@@ -111,22 +111,20 @@ function resetAllApp() {
     // Remove every trace: SVG, cursor, style width/height
     diagram.innerHTML = '';
     diagram.removeAttribute('style');
-    
+
     const oldSvg = diagram.querySelector('svg');
     if (oldSvg) oldSvg.remove();
-  
+
     // Put placeholder back cleanly
     const ph = document.createElement('div');
     ph.className = 'small';
     ph.textContent = 'Select a path → Diagram';
     diagram.appendChild(ph);
   }
-  
-  // Reset SVG size label
-  const svgSizeEl = el('svgSize');
-  if (svgSizeEl) svgSizeEl.textContent = '—';
-  const statusEl  = el('status');     if (statusEl)  statusEl.textContent = '—';
-  const svgSizeEl = el('svgSize');    if (svgSizeEl) svgSizeEl.textContent = '—';
+
+  // Reset labels
+  const svgSizeEl1 = el('svgSize'); if (svgSizeEl1) svgSizeEl1.textContent = '—';
+  const statusEl  = el('status');   if (statusEl)  statusEl.textContent = '—';
 
   const inAtt = el('attackerName'); if (inAtt) inAtt.value = '';
   const inTar = el('targetName');   if (inTar) inTar.value = '';
@@ -140,110 +138,10 @@ function resetAllApp() {
 /* -------------------------------------------------------------------------- */
 /* Bridge playback controls to simulation engine                              */
 /* -------------------------------------------------------------------------- */
+/* NOTE: no button bindings here to avoid double-binding with dataset playback.
+   We only keep this placeholder to preserve the call site in init(). */
 function bridgeSimulationPlayback() {
-  const btnPP = el('btnPlayPause');
-  const btnStop = el('btnStop');
-  const btnRestart = el('btnRestart');
-  const btnStepBack = el('btnStepBack');
-  const btnStepForward = el('btnStepForward');
-  const speed = el('simSpeed');
-  const speedLabel = el('simSpeedValue');
-
-  // Default: disabled until a run starts
-  setPlaybackEnabled(false);
-  setPlayPauseVisual(false);
-
-  // Live speed → simulation
-  if (speed) {
-    const applySpeed = () => {
-      const v = parseFloat(speed.value || '1') || 1;
-      simSetSpeed(v);
-      if (speedLabel) speedLabel.textContent = `×${v.toFixed(1)}`;
-    };
-    applySpeed();
-    speed.addEventListener('input', applySpeed);
-  }
-
-  // Play / Pause
-  if (btnPP) {
-    btnPP.onclick = async () => {
-      if (!simIsRunning()) {
-        setPlaybackEnabled(true);
-        setPlayPauseVisual(true);
-        simPlay();
-        try {
-          await runSimulation({ renderCallback: () => renderAllUI() });
-        } finally {
-          // When scenarios complete naturally
-          setPlayPauseVisual(false);
-          setPlaybackEnabled(false);
-        }
-      } else {
-        if (simIsPaused()) {
-          simPlay();
-          setPlayPauseVisual(true);
-        } else {
-          simPause();
-          setPlayPauseVisual(false);
-        }
-      }
-    };
-  }
-
-  // Stop
-  if (btnStop) {
-    btnStop.onclick = () => {
-      if (simIsRunning()) simStop();
-      setPlayPauseVisual(false);
-      setPlaybackEnabled(false);
-    };
-  }
-
-  // Restart (fresh state, new run)
-  if (btnRestart) {
-    btnRestart.onclick = async () => {
-      resetForFreshSimulation();
-      setPlaybackEnabled(true);
-      setPlayPauseVisual(true);
-      simPlay();
-      try {
-        await runSimulation({ renderCallback: () => renderAllUI() });
-      } finally {
-        setPlayPauseVisual(false);
-        setPlaybackEnabled(false);
-      }
-    };
-  }
-
-  // Step back: UI dataset fallback
-  if (btnStepBack) {
-    btnStepBack.onclick = () => {
-      if (simIsRunning() && !simIsPaused()) {
-        simPause();
-        setPlayPauseVisual(false);
-      }
-      playback_stepBack();
-    };
-  }
-
-  // Step forward: true simulation single step while paused
-  if (btnStepForward) {
-    btnStepForward.onclick = async () => {
-      if (!simIsRunning()) {
-        setPlaybackEnabled(true);
-        simPause();
-        setPlayPauseVisual(false);
-        runSimulation({ renderCallback: () => renderAllUI() });
-        setTimeout(() => simStep(), 40);
-      } else {
-        if (!simIsPaused()) {
-          simPause();
-          setPlayPauseVisual(false);
-        }
-        simStep();
-      }
-    };
-  }
+  // no-op: buttons are managed in wirePlaybackControls() with runtime routing
 }
 
 /* -------------------------------------------------------------------------- */
@@ -313,8 +211,8 @@ async function init() {
   wireLinksUI();
   wireTopActions();
   wireSimulationButton();
-  wirePlaybackControls();
-  bridgeSimulationPlayback();
+  wirePlaybackControls();     // unified handlers (route to sim if running)
+  bridgeSimulationPlayback(); // no-op (kept for compatibility)
   ensureSimScenarioLinkButtons();
 }
 
@@ -683,22 +581,20 @@ function resetForFreshSimulation() {
     // Remove every trace: SVG, cursor, style width/height
     diagram.innerHTML = '';
     diagram.removeAttribute('style');
-    
+
     const oldSvg = diagram.querySelector('svg');
     if (oldSvg) oldSvg.remove();
-  
+
     // Put placeholder back cleanly
     const ph = document.createElement('div');
     ph.className = 'small';
     ph.textContent = 'Select a path → Diagram';
     diagram.appendChild(ph);
   }
-  
-  // Reset SVG size label
-  const svgSizeEl = el('svgSize');
-  if (svgSizeEl) svgSizeEl.textContent = '—';
-  const statusEl  = el('status');     if (statusEl)  statusEl.textContent = '—';
-  const svgSizeEl = el('svgSize');    if (svgSizeEl) svgSizeEl.textContent = '—';
+
+  // Reset labels
+  const svgSizeEl1 = el('svgSize'); if (svgSizeEl1) svgSizeEl1.textContent = '—';
+  const statusEl  = el('status');   if (statusEl)  statusEl.textContent = '—';
 
   try { localStorage.removeItem('envuln-lite-store'); } catch {}
 
@@ -770,12 +666,14 @@ function playback_play() {
   if (!playback.dataset.length) return;
   playback.playing = true;
   playback_updateButtons();
+  setPlayPauseVisual(true);
   playback_tick();
 }
 function playback_pause() {
   playback.playing = false;
   clearTimeout(playback.timer);
   playback_updateButtons();
+  setPlayPauseVisual(false);
 }
 function playback_stop() {
   playback_pause();
@@ -846,7 +744,7 @@ function playback_computeIfNeededAndStart() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Wire dataset playback controls                                             */
+/* Wire dataset+simulation playback controls (single source of truth)         */
 /* -------------------------------------------------------------------------- */
 function wirePlaybackControls() {
   const btnPP = el('btnPlayPause');
@@ -858,6 +756,18 @@ function wirePlaybackControls() {
 
   if (btnPP) {
     btnPP.onclick = () => {
+      // If simulation is running, route to simulation controls
+      if (typeof simIsRunning === 'function' && simIsRunning()) {
+        if (typeof simIsPaused === 'function' && simIsPaused()) {
+          try { simPlay(); } catch {}
+          setPlayPauseVisual(true);
+        } else {
+          try { simPause(); } catch {}
+          setPlayPauseVisual(false);
+        }
+        return;
+      }
+      // Otherwise: dataset playback
       if (playback.playing) {
         playback_pause();
       } else {
@@ -870,14 +780,50 @@ function wirePlaybackControls() {
       }
     };
   }
-  if (btnStop) btnStop.onclick = () => playback_stop();
-  if (btnRestart) btnRestart.onclick = () => playback_restart();
-  if (btnStepBack) btnStepBack.onclick = () => { playback_pause(); playback_stepBack(); };
-  if (btnStepForward) btnStepForward.onclick = () => { playback_pause(); playback_stepForward(); };
+  if (btnStop) btnStop.onclick = () => {
+    if (typeof simIsRunning === 'function' && simIsRunning()) {
+      try { simStop(); } catch {}
+      setPlayPauseVisual(false);
+      return;
+    }
+    playback_stop();
+  };
+  if (btnRestart) btnRestart.onclick = () => {
+    if (typeof simIsRunning === 'function' && simIsRunning()) {
+      resetForFreshSimulation();
+      return;
+    }
+    playback_restart();
+  };
+  if (btnStepBack) btnStepBack.onclick = () => {
+    if (typeof simIsRunning === 'function' && simIsRunning()) {
+      try { simPause(); } catch {}
+      setPlayPauseVisual(false);
+      // no "step back" in sim; just pause
+      return;
+    }
+    playback_pause();
+    playback_stepBack();
+  };
+  if (btnStepForward) btnStepForward.onclick = () => {
+    if (typeof simIsRunning === 'function' && simIsRunning()) {
+      try { simPause(); } catch {}
+      setPlayPauseVisual(false);
+      try { simStep(); } catch {}
+      return;
+    }
+    playback_pause();
+    playback_stepForward();
+  };
 
   if (speed) {
+    // set both speeds
     playback_setSpeed(speed.value || 1);
-    speed.addEventListener('input', () => playback_setSpeed(speed.value));
+    try { simSetSpeed(parseFloat(speed.value || '1') || 1); } catch {}
+    speed.addEventListener('input', () => {
+      playback_setSpeed(speed.value);
+      try { simSetSpeed(parseFloat(speed.value || '1') || 1); } catch {}
+    });
   }
 
   playback_updateButtons();
