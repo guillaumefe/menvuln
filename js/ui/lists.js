@@ -4,7 +4,7 @@ import { saveToLocal } from '../storage.js';
 import { el } from '../helpers.js';
 
 import { hydrateDetailsPanel } from './editors.js'; // update right panel
-import { renderLinksInspector } from './links.js';  // update link list
+import { renderLinksInspector as _renderLinksInspector } from './links.js';  // update link list
 import { renderResults } from './results.js';       // refresh if needed
 
 /* ---- Helpers ---- */
@@ -33,6 +33,24 @@ function mini(text){
 function emitStateChanged() {
   try { saveToLocal(State); } catch(e) { console.warn('save failed', e); }
   document.dispatchEvent(new CustomEvent('state:changed'));
+}
+
+/* ---- small DOM utils for selectors ---- */
+function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.name, selected = new Set() } = {}){
+  if(!selectEl) return;
+  const prev = selectEl.value;
+  selectEl.innerHTML = '';
+  items.forEach(item => {
+    const opt = document.createElement('option');
+    opt.value = String(getValue(item));
+    opt.textContent = String(getLabel(item));
+    if (selected.has(opt.value)) opt.selected = true;
+    selectEl.appendChild(opt);
+  });
+  // if previous value still exists, keep it selected
+  if (prev && [...selectEl.options].some(o => o.value === prev)) {
+    selectEl.value = prev;
+  }
 }
 
 /* ---- RENDER ATTACKERS ---- */
@@ -174,3 +192,66 @@ export function renderAllLists(){
   renderVulns();
   hydrateDetailsPanel(); // update right panel if selection exists
 }
+
+/* ---- Selectors population / hydration ---- */
+
+/**
+ * Populate all UI selectors that depend on State:
+ * - #selAttacker (single select of attackers)
+ * - #selEntriesAll (multi-select of potential entry targets)
+ * - #linkSource (single select of source node: targets)
+ * - #linkDest (multi-select of destination nodes: targets)
+ * - #linkType (optional; keeps current options intact if present)
+ */
+export function populateSelectors(state = State){
+  // attackers select
+  const selAttacker = el('selAttacker');
+  setOptions(selAttacker, state.attackers || []);
+
+  // entries available = all targets
+  const selEntriesAll = el('selEntriesAll');
+  setOptions(selEntriesAll, state.targets || []);
+
+  // link source/dest are from targets as well
+  const linkSource = el('linkSource');
+  const linkDest = el('linkDest');
+  setOptions(linkSource, state.targets || []);
+  setOptions(linkDest, state.targets || []);
+
+  // keep current selection hydrated
+  hydrateEntriesSelect(state);
+  renderLinksInspector();
+}
+
+/**
+ * Sync the entries multiselect with the currently chosen attacker.
+ * Highlights previously saved entries for that attacker.
+ */
+export function hydrateEntriesSelect(state = State){
+  const selAttacker = el('selAttacker');
+  const selEntriesAll = el('selEntriesAll');
+  if(!selAttacker || !selEntriesAll) return;
+
+  const attackerId = selAttacker.value;
+  const attacker = (state.attackers || []).find(a => String(a.id) === String(attackerId));
+  const selectedSet = new Set(
+    attacker
+      ? [...(attacker.entries instanceof Set ? attacker.entries : new Set(attacker.entries || []))].map(String)
+      : []
+  );
+
+  // reapply selected flags on current options
+  [...selEntriesAll.options].forEach(opt => {
+    opt.selected = selectedSet.has(opt.value);
+  });
+}
+
+/* ---- Right-panel exposure ---- */
+
+/** Thin wrapper so main.js can call a stable name. */
+export function renderDetailsPanel(){
+  hydrateDetailsPanel();
+}
+
+/* ---- Re-export links inspector so main.js can import from lists.js ---- */
+export const renderLinksInspector = _renderLinksInspector;
