@@ -1,6 +1,6 @@
 // js/ui/editors.js
 // Editor UI module: target editor, attacker editor, details panel
-// Imports expected from your modular structure:
+// Imports expected from the modular structure:
 //  - State (singleton) from ../state.js
 //  - saveToLocal(state) from ../storage.js
 //  - helpers: el, norm
@@ -326,10 +326,10 @@ export function initEditors() {
       if (prev && [...s.options].some(o => o.value === prev)) s.value = prev;
     });
 
-    // If there's a currently rendered details editor, re-render it to reflect vuls/finals
+    // If there is a currently rendered details editor, re-render it to reflect vulnerabilities and flags
     hydrateDetailsPanel();
   });
 
-  // initial population (in case DOM ready)
+  // initial population in case DOM is already ready
   document.dispatchEvent(new CustomEvent('state:changed'));
 }
