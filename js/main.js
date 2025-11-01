@@ -1,6 +1,7 @@
-// js/main.js — Entry point
+// js/main.js
+// Application bootstrap for ENVULN (client-side).
 
-import { el, norm } from './helpers.js';
+import { el } from './helpers.js';
 import * as StateMod from './state.js';
 import { saveToLocal, loadFromLocal } from './storage.js';
 import {
@@ -12,63 +13,67 @@ import {
   renderLinksInspector,
   renderDetailsPanel,
 } from './ui/lists.js';
-import { wireLinksUI } from './ui/links.js';           // 👈 wiring des liens
 import { computeAllPaths } from './paths.js';
 import { buildSVGForPath } from './diagram.js';
 import { exportODS } from './exportODS.js';
 
 import {
   runSimulation,
+  registerScenario, // available for scenarios.js if needed
   disableTopButtons,
   enableTopButtons
 } from './simulation/index.js';
 
-// 👇 Charger les scénarios (sinon Simulation ne fait rien)
-import './simulation/scenarios.js';
-
-/* ---------- Local runtime helpers ---------- */
-let lastResults = [];                 // tableau de paths normalisés
+/* ---------- Local state ---------- */
+let lastResults = [];                 // array of path objects
 let lastMeta = { cycles: false, truncated: false };
 let lastDiagramSVG = null;
 
-function renderStatus(s){ const sEl = el('status'); if(sEl) sEl.textContent = s || '—'; }
-
-/* ---------- Life cycle: init ---------- */
-async function init(){
-  // 1) Hydrate State depuis localStorage
-  const loaded = loadFromLocal();
-  if (loaded) {
-    // Pas de StateMod.hydrate fourni : on reconstruit les Sets
-    StateMod.State.version  = loaded.version || StateMod.State.version;
-    StateMod.State.vulns    = loaded.vulns || [];
-    StateMod.State.targets  = (loaded.targets || []).map(t => ({ id:t.id, name:t.name, vulns:new Set(t.vulns), final:!!t.final }));
-    StateMod.State.attackers= (loaded.attackers || []).map(a => ({ id:a.id, name:a.name, entries:new Set(a.entries) }));
-    StateMod.State.edges = {
-      direct:   convertEdge(loaded.edges?.direct),
-      lateral:  convertEdge(loaded.edges?.lateral),
-      contains: convertEdge(loaded.edges?.contains),
-    };
-  }
-  (StateMod.State.targets || []).forEach(t => StateMod.ensureEdgeMaps(t.id));
-
-  // 2) Rendu initial + wiring
-  renderAllUI();
-  wireUI();
-  wireCreateButtons();   // 👈 Add attacker/target/vuln
-  wireEntriesBinding();  // 👈 multi-select entries
-  wireLinksUI();         // 👈 add/remove links
-
-  renderStatus('Ready');
+function renderStatus(s) {
+  const sEl = el('status');
+  if (sEl) sEl.textContent = s;
 }
 
-function convertEdge(obj){
+/* ---------- Init ---------- */
+async function init() {
+  // Rehydrate from localStorage (if any)
+  const loaded = loadFromLocal();
+  if (loaded) {
+    if (typeof StateMod.hydrate === 'function') {
+      StateMod.hydrate(loaded);
+    } else {
+      // manual migration to live State shape
+      StateMod.State.version  = loaded.version || StateMod.State.version;
+      StateMod.State.vulns    = loaded.vulns || [];
+      StateMod.State.targets  = (loaded.targets || []).map(t => ({
+        id: t.id, name: t.name, vulns: new Set(t.vulns), final: !!t.final
+      }));
+      StateMod.State.attackers = (loaded.attackers || []).map(a => ({
+        id: a.id, name: a.name, entries: new Set(a.entries)
+      }));
+      StateMod.State.edges = {
+        direct:   convertEdge(loaded.edges?.direct),
+        lateral:  convertEdge(loaded.edges?.lateral),
+        contains: convertEdge(loaded.edges?.contains),
+      };
+    }
+  }
+
+  // Ensure edge maps exist for all targets
+  (StateMod.State.targets || []).forEach(t => StateMod.ensureEdgeMaps(t.id));
+
+  renderAllUI();
+  wireUI();
+}
+
+function convertEdge(obj) {
   const out = {};
-  if(!obj) return out;
-  for(const k in obj) out[k] = new Set(obj[k] || []);
+  if (!obj) return out;
+  for (const k in obj) out[k] = new Set(obj[k] || []);
   return out;
 }
 
-function renderAllUI(){
+function renderAllUI() {
   renderAttackers(StateMod.State);
   renderTargets(StateMod.State);
   renderVulns(StateMod.State);
@@ -78,30 +83,35 @@ function renderAllUI(){
   renderDetailsPanel();
 }
 
-/* ---------- Results panel (simple) ---------- */
-function filterOnlyVuln(results){
+/* ---------- Results panel (simple local renderer) ---------- */
+function filterOnlyVuln(paths) {
   const only = el('chkOnlyVuln')?.checked;
-  if(!only) return results;
-  return results.filter(p => p.vulnsPerNode?.every(v => Array.isArray(v) && v.length > 0));
+  if (!only) return paths;
+  return paths.filter(p =>
+    Array.isArray(p.vulnsPerNode) && p.vulnsPerNode.every(v => Array.isArray(v) && v.length > 0)
+  );
 }
 
-function renderResultsView(results, meta){
+function renderResultsView(paths, meta) {
   const container = el('results');
   container.innerHTML = '';
-  if(!results.length){
+  if (!paths.length) {
     container.innerHTML = `<div class="small">No paths.</div>`;
     renderStatus('0 paths');
     return;
   }
-  results.forEach(p => {
+
+  paths.forEach(p => {
     const row = document.createElement('div');
     row.className = 'path';
+
     const left = document.createElement('div');
     left.className = 'left';
     left.innerHTML = `
       <div><strong>${p.attackerName || p.attacker || ''}</strong></div>
       <div class="small">${(p.nodes || []).map(n => n.name).join(' → ')}</div>
     `;
+
     const right = document.createElement('div');
     const btn = document.createElement('button');
     btn.className = 'ghost';
@@ -109,75 +119,77 @@ function renderResultsView(results, meta){
     btn.onclick = () => {
       lastDiagramSVG = buildSVGForPath(p, StateMod.State);
       const box = el('diagramBox');
-      if(box) box.innerHTML = lastDiagramSVG;
+      if (box) box.innerHTML = lastDiagramSVG;
     };
+
     right.appendChild(btn);
     row.appendChild(left);
     row.appendChild(right);
     container.appendChild(row);
   });
-  const bits = [`${results.length} paths`];
-  if(meta?.cycles) bits.push('cycles detected');
-  if(meta?.truncated) bits.push('truncated');
-  renderStatus(bits.join(' • '));
+
+  const parts = [`${paths.length} paths`];
+  if (meta.cycles) parts.push('(cycles detected)');
+  if (meta.truncated) parts.push('(truncated)');
+  renderStatus(parts.join(' '));
 }
 
 /* ---------- Actions ---------- */
-async function onComputePaths(){
-  try{
+async function onComputePaths() {
+  try {
     renderStatus('Computing…');
     const opts = {
-      includeLateral:  !!el('includeLateral')?.checked,
-      includeContains: !!el('includeContains')?.checked,
+      includeLateral:  el('includeLateral')?.checked,
+      includeContains: el('includeContains')?.checked,
+      maxPaths: parseInt(el('maxPaths')?.value || '2000', 10),
     };
-    const maxPer = parseInt(el('maxPaths')?.value || '2000', 10);
 
-    const out = computeAllPaths(StateMod.State, opts, maxPer); // { paths, cycles, truncated }
+    const out = computeAllPaths(StateMod.State, opts, opts.maxPaths);
     lastResults = out.paths || [];
     lastMeta = { cycles: !!out.cycles, truncated: !!out.truncated };
 
     renderResultsView(filterOnlyVuln(lastResults), lastMeta);
-  }catch(e){
+    saveToLocal(StateMod.State);
+  } catch (e) {
     console.error(e);
-    alert('Path error');
-    renderStatus('Error');
+    alert('Path computation error.');
   }
 }
 
-function onExportODS(){
-  // ⚠️ Signature: exportODS(state, { results? })
-  const toExport = filterOnlyVuln(lastResults);
-  if(!toExport.length) return alert('No paths to export.');
-  exportODS(StateMod.State, { results: toExport });
+function onExportODS() {
+  if (!lastResults.length) return alert('No paths to export.');
+  exportODS(lastResults, { state: StateMod.State });
 }
 
-function onDownloadSVG(){
-  if(!lastDiagramSVG) return alert('No diagram');
-  const blob = new Blob([lastDiagramSVG], { type:'image/svg+xml' });
+function onDownloadSVG() {
+  if (!lastDiagramSVG) return alert('No diagram');
+  const blob = new Blob([lastDiagramSVG], { type: 'image/svg+xml' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `diagram.svg`;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),0);
+  setTimeout(() => URL.revokeObjectURL(a.href), 0);
 }
 
-/* ---------- Wiring global UI ---------- */
-function wireUI(){
-  el('btnFindPaths')    && (el('btnFindPaths').onclick    = onComputePaths);
-  el('btnExportODS')    && (el('btnExportODS').onclick    = onExportODS);
-  el('btnDownloadSVG')  && (el('btnDownloadSVG').onclick  = onDownloadSVG);
+/* ---------- Wire UI ---------- */
+function wireUI() {
+  el('btnFindPaths')?.addEventListener('click', onComputePaths);
+  el('btnExportODS')?.addEventListener('click', onExportODS);
+  el('btnDownloadSVG')?.addEventListener('click', onDownloadSVG);
 
   const btnSimu = el('btnSimu');
-  if(btnSimu){
+  if (btnSimu) {
     btnSimu.onclick = async () => {
-      try{
+      try {
         disableTopButtons(true);
         btnSimu.textContent = 'Simulating…';
         btnSimu.disabled = true;
+
+        // Run a random registered scenario (or pass {scenarioName:'...'} here)
         await runSimulation({ renderCallback: () => renderAllUI() });
-      }finally{
+      } finally {
         btnSimu.textContent = 'Simulation';
         btnSimu.disabled = false;
         enableTopButtons(true);
@@ -186,82 +198,14 @@ function wireUI(){
     };
   }
 
-  // Refiltrer quand on coche “Only paths with vulns”
-  const only = el('chkOnlyVuln');
-  if (only) {
-    only.onchange = () => renderResultsView(filterOnlyVuln(lastResults), lastMeta);
-  }
+  // Recompute filter view when checkbox toggles
+  el('chkOnlyVuln')?.addEventListener('change', () => {
+    renderResultsView(filterOnlyVuln(lastResults), lastMeta);
+  });
 }
 
-/* ---------- Wiring: création + entries ---------- */
-function wireCreateButtons(){
-  const attackerInput = el('attackerName');
-  const targetInput   = el('targetName');
-  const vulnInput     = el('vulnName');
-
-  const doSaveAndRefresh = () => { try{ saveToLocal(StateMod.State); }catch{} renderAllUI(); };
-
-  const btnA = el('btnAddAttacker');
-  if(btnA){
-    btnA.onclick = () => {
-      const name = norm(attackerInput?.value || '');
-      if(!name) return alert('Attacker name required');
-      try{
-        StateMod.createAttacker(name);
-        attackerInput.value = '';
-        doSaveAndRefresh();
-      }catch(e){ alert(e.message || 'Error'); }
-    };
-  }
-
-  const btnT = el('btnAddTarget');
-  if(btnT){
-    btnT.onclick = () => {
-      const name = norm(targetInput?.value || '');
-      if(!name) return alert('Target name required');
-      try{
-        const id = StateMod.createTarget(name, false);
-        StateMod.ensureEdgeMaps(id);
-        targetInput.value = '';
-        doSaveAndRefresh();
-      }catch(e){ alert(e.message || 'Error'); }
-    };
-  }
-
-  const btnV = el('btnAddVuln');
-  if(btnV){
-    btnV.onclick = () => {
-      const name = norm(vulnInput?.value || '');
-      if(!name) return alert('Vulnerability name required');
-      try{
-        StateMod.createVuln(name);
-        vulnInput.value = '';
-        doSaveAndRefresh();
-      }catch(e){ alert(e.message || 'Error'); }
-    };
-  }
-}
-
-function wireEntriesBinding(){
-  const selAttacker  = el('selAttacker');
-  const selEntries   = el('selEntriesAll');
-  if(!selAttacker || !selEntries) return;
-
-  // Hydrate multiselect when attacker changes
-  selAttacker.onchange = () => hydrateEntriesSelect(StateMod.State);
-
-  // Persist entries when multiselect changes
-  selEntries.onchange = () => {
-    const attackerId = selAttacker.value;
-    const picked = [...selEntries.selectedOptions].map(o => o.value);
-    try{
-      StateMod.setAttackerEntries(attackerId, picked);
-      saveToLocal(StateMod.State);
-    }catch(e){ console.warn(e); }
-  };
-}
-
-/* ---------- expose debug ---------- */
+/* ---------- Expose for console debugging ---------- */
 window.__envuln_boot = { State: StateMod.State, computeAllPaths };
 
+/* ---------- Boot ---------- */
 init();
