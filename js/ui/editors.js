@@ -84,9 +84,10 @@ export function renderTargetEditor(targetId) {
     lab.style.gap = '8px';
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.checked = (target.vulns && target.vulns instanceof Set && target.vulns.has(v.id));
+    const currentVulns = target.vulns instanceof Set ? target.vulns : new Set(target.vulns || []);
+    cb.checked = currentVulns.has(v.id);
     cb.onchange = () => {
-      target.vulns = target.vulns instanceof Set ? target.vulns : new Set();
+      target.vulns = target.vulns instanceof Set ? target.vulns : new Set(target.vulns || []);
       if (cb.checked) target.vulns.add(v.id);
       else target.vulns.delete(v.id);
       emitChange();
@@ -115,7 +116,7 @@ export function renderTargetEditor(targetId) {
       // attach existing vuln if present
       const existing = State.vulns.find(x => x.name.toLowerCase() === name.toLowerCase());
       if (existing) {
-        target.vulns = target.vulns instanceof Set ? target.vulns : new Set();
+        target.vulns = target.vulns instanceof Set ? target.vulns : new Set(target.vulns || []);
         target.vulns.add(existing.id);
         inputNewV.value = '';
         emitChange();
@@ -127,7 +128,7 @@ export function renderTargetEditor(targetId) {
     const id = (Date.now().toString(36) + Math.random().toString(36).slice(2,6));
     State.vulns.push({ id, name });
     // attach to target
-    target.vulns = target.vulns instanceof Set ? target.vulns : new Set();
+    target.vulns = target.vulns instanceof Set ? target.vulns : new Set(target.vulns || []);
     target.vulns.add(id);
     inputNewV.value = '';
     emitChange();
@@ -205,11 +206,14 @@ export function renderAttackerEditor(attackerId) {
   sel.size = Math.min(10, Math.max(6, State.targets.length));
   sel.style.width = '100%';
 
+  // Normalize attacker.entries to a Set before checking membership
+  const entriesSet = attacker.entries instanceof Set ? attacker.entries : new Set(attacker.entries || []);
+
   State.targets.forEach(t => {
     const o = document.createElement('option');
     o.value = t.id;
     o.textContent = t.name;
-    o.selected = attacker.entries && attacker.entries instanceof Set && attacker.entries.has(t.id);
+    o.selected = entriesSet.has(t.id);
     sel.appendChild(o);
   });
 
