@@ -1,6 +1,8 @@
 // js/main.js
 // Main UI and app logic
 
+import './simulation/scenarios.js'; // ensure scenarios are registered first
+
 import { el, norm } from './helpers.js';
 import * as StateMod from './state.js';
 import { saveToLocal, loadFromLocal } from './storage.js';
@@ -20,7 +22,6 @@ import {
   disableTopButtons,
   enableTopButtons
 } from './simulation/index.js';
-import './simulation/scenarios.js';
 
 let lastResults = [];
 let lastMeta = { cycles: false, truncated: false };
@@ -66,6 +67,7 @@ async function init(){
   wireVulns();
   wireLinksUI();
   wireTopActions();
+  wireSimulationButton();
 }
 
 function renderAllUI(){
@@ -224,6 +226,24 @@ function wireTopActions(){
     a.href = URL.createObjectURL(blob);
     a.download = 'diagram.svg';
     a.click();
+  };
+}
+
+function wireSimulationButton(){
+  const btn = el('btnSimu');
+  if (!btn) return;
+  btn.onclick = async () => {
+    try {
+      disableTopButtons(true);
+      btn.textContent = 'Simulating…';
+      btn.disabled = true;
+      await runSimulation({ renderCallback: () => renderAllUI() });
+    } finally {
+      btn.textContent = 'Simulation';
+      btn.disabled = false;
+      enableTopButtons();
+      renderAllUI();
+    }
   };
 }
 
