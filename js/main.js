@@ -552,7 +552,8 @@ function wireSimulationButton() {
     try {
       disableTopButtons(true);
       setPlaybackEnabled(true);
-      setPlayPauseVisual(true); // show "pause" while scenarios run
+      setPlayPauseVisual(true);      // show "pause" immediately
+      playback_updateButtons();      // ensure icon reflects sim state
       btn.textContent = 'Simulating…';
       btn.disabled = true;
       await runSimulation({ renderCallback: () => renderAllUI() });
@@ -561,9 +562,10 @@ function wireSimulationButton() {
       btn.disabled = false;
       enableTopButtons();
       setPlayPauseVisual(false);
-      setPlaybackEnabled(false); // re-disable controls when scenarios end
+      setPlaybackEnabled(false);
       renderAllUI();
       playback_resetToStart?.();
+      playback_updateButtons();      // reset icon after sim ends
     }
   };
 }
@@ -646,32 +648,42 @@ function playback_renderCurrent() {
   }
 }
 function playback_updateButtons() {
-  const btnPP         = el('btnPlayPause');
-  const btnStop       = el('btnStop');
-  const btnRestart    = el('btnRestart');
-  const btnStepBack   = el('btnStepBack');
-  const btnStepForward= el('btnStepForward');
+  const btnPP          = el('btnPlayPause');
+  const btnStop        = el('btnStop');
+  const btnRestart     = el('btnRestart');
+  const btnStepBack    = el('btnStepBack');
+  const btnStepForward = el('btnStepForward');
 
   const simRunning = (typeof simIsRunning === 'function') && simIsRunning();
+  const simPaused  = (typeof simIsPaused  === 'function') && simIsPaused();
   const hasData    = playback.dataset.length > 0;
+
+  // Enable row when (a) sim is running OR (b) dataset is present — and the row is globally enabled
   const enableRow  = playbackControlsEnabled && (simRunning || hasData);
 
   [btnPP, btnStop, btnRestart, btnStepBack, btnStepForward].forEach(b => {
     if (b) b.disabled = !enableRow;
   });
 
+  // Step buttons: use sim stepping when sim is running, otherwise dataset edges
   if (enableRow) {
     if (simRunning) {
-      if (btnStepBack)    btnStepBack.disabled    = !simCanStepBack();
-      if (btnStepForward) btnStepForward.disabled = !simCanStepForward();
+      if (btnStepBack)    btnStepBack.disabled    = !(typeof simCanStepBack === 'function' && simCanStepBack());
+      if (btnStepForward) btnStepForward.disabled = !(typeof simCanStepForward === 'function' && simCanStepForward());
     } else {
-      // dataset playback : griser aux bords
       if (btnStepBack)    btnStepBack.disabled    = playback.index <= 0;
       if (btnStepForward) btnStepForward.disabled = playback.index >= (playback.dataset.length - 1);
     }
   }
 
-  if (btnPP) btnPP.textContent = playback.playing ? '⏸' : '▶';
+  // Icon logic: simulation state wins; dataset playback is only used when no sim is running
+  if (btnPP) {
+    if (simRunning) {
+      btnPP.textContent = simPaused ? '▶' : '⏸';
+    } else {
+      btnPP.textContent = playback.playing ? '⏸' : '▶';
+    }
+  }
 }
 function playback_tick() {
   if (!playback.playing) return;
