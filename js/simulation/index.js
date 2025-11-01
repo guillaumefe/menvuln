@@ -101,6 +101,12 @@ export function simStepForward(steps = 10) {
   const next = Math.min(TIMELINE.points.length - 1, TIMELINE.idx + Math.max(1, steps | 0));
   timelineGoto(next);
 }
+export function simCanStepBack() {
+  return TIMELINE.idx > 0;
+}
+export function simCanStepForward() {
+  return TIMELINE.idx >= 0 && TIMELINE.idx < (TIMELINE.points.length - 1);
+}
 
 /* ---------------- DOM helpers ---------------- */
 const $ = (id) => document.getElementById(id);
