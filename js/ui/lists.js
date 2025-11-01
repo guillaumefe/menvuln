@@ -37,7 +37,7 @@ function emitStateChanged() {
 }
 
 /* ---- Select Utility for Dropdowns ---- */
-function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.name, selected = new Set() } = {}){
+export function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.name, selected = new Set() } = {}){
   if(!selectEl) return;
   const prev = selectEl.value;
   selectEl.innerHTML = '';
