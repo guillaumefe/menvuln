@@ -7,7 +7,7 @@ import './simulation/scenarios.js';
 
 import { el, norm } from './helpers.js';
 import * as StateMod from './state.js';
-import { saveToLocal, loadFromLocal, exportJSON, importJSON } from './storage.js';
+import { saveToLocal, loadFromLocal, exportJSON, importJSON, clearLocal } from './storage.js';
 import {
   renderAttackers,
   renderTargets,
@@ -24,10 +24,8 @@ import {
   disableTopButtons,
   enableTopButtons,
   simPlay, simPause, simToggle, simStop, simStep, simSetSpeed,
-  simIsRunning, simIsPaused,
-  simStepBack, simStepForward
+  simIsRunning, simIsPaused
 } from './simulation/index.js';
-import { clearLocal } from './storage.js';
 
 let lastResults = [];
 let lastMeta = { cycles: false, truncated: false };
@@ -68,50 +66,61 @@ function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.n
 }
 
 /* -------------------------------------------------------------------------- */
-/* UI helper                                                              */
+/* Playback UI helpers                                                        */
+/* -------------------------------------------------------------------------- */
+function setPlayPauseVisual(isPlaying) {
+  const btn = el('btnPlayPause');
+  if (!btn) return;
+  // MP3-like icons
+  btn.textContent = isPlaying ? '⏸' : '▶';
+}
+
+function setPlaybackEnabled(enabled) {
+  const ids = ['btnPlayPause','btnStop','btnRestart','btnStepBack','btnStepForward'];
+  ids.forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.disabled = !enabled;
+  });
+  // Optional row styling if you wrapped the row with an id
+  const row = document.getElementById('playbackRow');
+  if (row) row.classList.toggle('is-disabled', !enabled);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Full wipe (used by Reset All and Restart)                                  */
 /* -------------------------------------------------------------------------- */
 function resetAllApp() {
-  try { if (typeof simStop === 'function') simStop(); } catch {}
+  try { simStop(); } catch {}
 
   const cur = document.getElementById('__sim_cursor');
   if (cur) cur.remove();
 
-  // Reset in-memory state
   StateMod.State.attackers = [];
   StateMod.State.targets   = [];
   StateMod.State.vulns     = [];
   StateMod.State.edges     = { direct: {}, lateral: {}, contains: {} };
 
-  // Clear persisted storage
   try { clearLocal(); } catch {}
 
-  // Reset cached results/meta
   lastResults = [];
   lastMeta = { cycles: false, truncated: false };
 
-  // Clear UI surfaces
   const resultsEl = el('results');    if (resultsEl) resultsEl.innerHTML = '';
   const diagram   = el('diagramBox'); if (diagram)   diagram.innerHTML = '<div class="small">Select a path → Diagram</div>';
   const statusEl  = el('status');     if (statusEl)  statusEl.textContent = '—';
   const svgSizeEl = el('svgSize');    if (svgSizeEl) svgSizeEl.textContent = '—';
 
-  // Clear input fields
   const inAtt = el('attackerName'); if (inAtt) inAtt.value = '';
   const inTar = el('targetName');   if (inTar) inTar.value = '';
   const inVul = el('vulnName');     if (inVul) inVul.value = '';
 
-  // Grey/disable playback if you wired that helper
-  try { setPlaybackEnabled(false); } catch {}
-
-  // Re-render selection lists clean
+  setPlaybackEnabled(false);
   renderAllUI();
-
-  // Reset playback cursor/index
   try { playback_resetToStart(); } catch {}
 }
 
 /* -------------------------------------------------------------------------- */
-/* Playback bridge to the simulation                                          */
+/* Bridge playback controls to simulation engine                              */
 /* -------------------------------------------------------------------------- */
 function bridgeSimulationPlayback() {
   const btnPP = el('btnPlayPause');
@@ -122,13 +131,11 @@ function bridgeSimulationPlayback() {
   const speed = el('simSpeed');
   const speedLabel = el('simSpeedValue');
 
-  const updateLabels = () => {
-    const running = simIsRunning();
-    const paused  = simIsPaused();
-    if (btnPP) btnPP.textContent = (running && !paused) ? 'Pause' : 'Play';
-  };
+  // Default: disabled until a run starts
+  setPlaybackEnabled(false);
+  setPlayPauseVisual(false);
 
-  // speed → simulation
+  // Live speed → simulation
   if (speed) {
     const applySpeed = () => {
       const v = parseFloat(speed.value || '1') || 1;
@@ -141,79 +148,92 @@ function bridgeSimulationPlayback() {
 
   // Play / Pause
   if (btnPP) {
-    btnPP.addEventListener('click', async () => {
+    btnPP.onclick = async () => {
       if (!simIsRunning()) {
-        // starting a run → enable Playback
         setPlaybackEnabled(true);
+        setPlayPauseVisual(true);
         simPlay();
-        await runSimulation({ renderCallback: () => renderAllUI() });
-        // run finished → disable Playback again
-        setPlaybackEnabled(false);
+        try {
+          await runSimulation({ renderCallback: () => renderAllUI() });
+        } finally {
+          // When scenarios complete naturally
+          setPlayPauseVisual(false);
+          setPlaybackEnabled(false);
+        }
       } else {
-        simToggle();
+        if (simIsPaused()) {
+          simPlay();
+          setPlayPauseVisual(true);
+        } else {
+          simPause();
+          setPlayPauseVisual(false);
+        }
       }
-    });
+    };
   }
-  
+
   // Stop
   if (btnStop) {
-    btnStop.addEventListener('click', () => {
-      // request stop and immediately wipe artifacts
-      resetForFreshSimulation();
-      // immediately grey out / disable
+    btnStop.onclick = () => {
+      if (simIsRunning()) simStop();
+      setPlayPauseVisual(false);
       setPlaybackEnabled(false);
-    });
+    };
   }
-  
-  // Restart
+
+  // Restart (fresh state, new run)
   if (btnRestart) {
-    btnRestart.addEventListener('click', async () => {
-      // wipe everything created so far, then start a fresh run
+    btnRestart.onclick = async () => {
       resetForFreshSimulation();
       setPlaybackEnabled(true);
+      setPlayPauseVisual(true);
       simPlay();
-      await runSimulation({ renderCallback: () => renderAllUI() });
-      // when scenarios complete naturally, disable controls again
-      setPlaybackEnabled(false);
-    });
+      try {
+        await runSimulation({ renderCallback: () => renderAllUI() });
+      } finally {
+        setPlayPauseVisual(false);
+        setPlaybackEnabled(false);
+      }
+    };
   }
 
-  // step back/forward: move the cursor a few timeline ticks and remain paused
+  // Step back: UI dataset fallback
   if (btnStepBack) {
-    btnStepBack.addEventListener('click', () => {
-      simStepBack(10);
-      if (btnPP) btnPP.textContent = 'Play';
-    });
+    btnStepBack.onclick = () => {
+      if (simIsRunning() && !simIsPaused()) {
+        simPause();
+        setPlayPauseVisual(false);
+      }
+      playback_stepBack();
+    };
   }
+
+  // Step forward: true simulation single step while paused
   if (btnStepForward) {
-    btnStepForward.addEventListener('click', () => {
-      simStepForward(10);
-      if (btnPP) btnPP.textContent = 'Play';
-    });
-  }
-
-  updateLabels();
-}
-
-function setPlaybackEnabled(enabled) {
-  const row = document.getElementById('playbackRow');
-  const ids = ['btnPlayPause','btnStop','btnRestart','btnStepBack','btnStepForward'];
-  ids.forEach(id => {
-    const b = document.getElementById(id);
-    if (b) b.disabled = !enabled;
-  });
-  if (row) {
-    row.classList.toggle('is-disabled', !enabled);
+    btnStepForward.onclick = async () => {
+      if (!simIsRunning()) {
+        setPlaybackEnabled(true);
+        simPause();
+        setPlayPauseVisual(false);
+        runSimulation({ renderCallback: () => renderAllUI() });
+        setTimeout(() => simStep(), 40);
+      } else {
+        if (!simIsPaused()) {
+          simPause();
+          setPlayPauseVisual(false);
+        }
+        simStep();
+      }
+    };
   }
 }
 
 /* -------------------------------------------------------------------------- */
-/* Shim for scenario link buttons (works even if buttons are not in the DOM)  */
+/* Hidden buttons for scenarios that call add/remove link by clicking         */
 /* -------------------------------------------------------------------------- */
 function ensureSimScenarioLinkButtons() {
   const byId = (id) => document.getElementById(id);
 
-  // create hidden buttons if missing
   ['btnAddLink','btnRemoveLink'].forEach(id => {
     if (!byId(id)) {
       const b = document.createElement('button');
@@ -224,7 +244,6 @@ function ensureSimScenarioLinkButtons() {
     }
   });
 
-  // handlers: read current UI selections and apply state changes
   const btnAdd = byId('btnAddLink');
   const btnDel = byId('btnRemoveLink');
 
@@ -247,7 +266,7 @@ function ensureSimScenarioLinkButtons() {
         } else {
           StateMod.removeEdge(type, from, to);
         }
-      } catch(e) { /* ignore */ }
+      } catch {}
     });
 
     try { saveToLocal(StateMod.State); } catch {}
@@ -278,7 +297,6 @@ async function init() {
   wireSimulationButton();
   wirePlaybackControls();
   bridgeSimulationPlayback();
-  setPlaybackEnabled(false);
   ensureSimScenarioLinkButtons();
 }
 
@@ -329,7 +347,7 @@ function hydrateVulnSelectors(state = StateMod.State) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Add controls                                                               */
+/* Add controls + Reset All                                                   */
 /* -------------------------------------------------------------------------- */
 function wireAddControls() {
   el('btnAddAttacker').onclick = () => {
@@ -609,6 +627,7 @@ function wireSimulationButton() {
     try {
       disableTopButtons(true);
       setPlaybackEnabled(true);
+      setPlayPauseVisual(true);
       btn.textContent = 'Simulating…';
       btn.disabled = true;
       await runSimulation({ renderCallback: () => renderAllUI() });
@@ -616,40 +635,37 @@ function wireSimulationButton() {
       btn.textContent = 'Simulation';
       btn.disabled = false;
       enableTopButtons();
-      renderAllUI();
+      setPlayPauseVisual(false);
       setPlaybackEnabled(false);
+      renderAllUI();
       playback_resetToStart?.();
     }
   };
 }
 
-// Fully clear runtime state, UI, storage, and the simulated cursor
+/* -------------------------------------------------------------------------- */
+/* Fresh simulation reset helper                                              */
+/* -------------------------------------------------------------------------- */
 function resetForFreshSimulation() {
-  // Stop any running loop and remove the fake cursor if present
-  try { if (typeof simStop === 'function') simStop(); } catch {}
+  try { simStop(); } catch {}
   const cur = document.getElementById('__sim_cursor');
   if (cur) cur.remove();
 
-  // Wipe in-memory state
   StateMod.State.attackers = [];
   StateMod.State.targets   = [];
   StateMod.State.vulns     = [];
   StateMod.State.edges     = { direct: {}, lateral: {}, contains: {} };
 
-  // Clear cached results/meta
   lastResults = [];
   lastMeta = { cycles: false, truncated: false };
 
-  // Reset UI surfaces
   const resultsEl = el('results');    if (resultsEl) resultsEl.innerHTML = '';
   const diagram   = el('diagramBox'); if (diagram)   diagram.innerHTML = '<div class="small">Select a path → Diagram</div>';
   const statusEl  = el('status');     if (statusEl)  statusEl.textContent = '—';
   const svgSizeEl = el('svgSize');    if (svgSizeEl) svgSizeEl.textContent = '—';
 
-  // Clear persisted storage so the next run starts clean
   try { localStorage.removeItem('envuln-lite-store'); } catch {}
 
-  // Re-render and reset playback index
   renderAllUI();
   if (typeof playback_resetToStart === 'function') playback_resetToStart();
 }
@@ -703,7 +719,7 @@ function playback_updateButtons() {
   [btnPP, btnStop, btnRestart, btnStepBack, btnStepForward].forEach(b => {
     if (b) b.disabled = !hasData;
   });
-  if (btnPP) btnPP.textContent = playback.playing ? 'Pause' : 'Play';
+  if (btnPP) btnPP.textContent = playback.playing ? '⏸' : '▶';
 }
 function playback_tick() {
   if (!playback.playing) return;
