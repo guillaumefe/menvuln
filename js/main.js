@@ -17,7 +17,7 @@ import { computeAllPaths } from './paths.js';
 import { buildSVGForPath } from './diagram.js';
 import { exportODS } from './exportODS.js';
 
-// NOTE: these are now exported by ./simulation/index.js
+// NOTE: these are exported by ./simulation/index.js
 import {
   runSimulation,
   registerScenario,
