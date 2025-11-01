@@ -9,10 +9,10 @@
 
 <body>
 <div class="wrap">
-  
-  <!-- LEFT : Entities panel -->
+
+  <!-- LEFT: Add-only -->
   <div class="panel" id="panelEntities">
-    <h3>Resources</h3>
+    <h3>Resources (Add only)</h3>
 
     <div class="form-block">
       <label>New attacker</label>
@@ -39,18 +39,12 @@
     </div>
 
     <hr>
-
-    <h3>Attackers</h3>
-    <div id="attackerList" class="list"></div>
-
-    <h3>Targets</h3>
-    <div id="targetList" class="list"></div>
-
-    <h3>Vulnerabilities</h3>
-    <div id="vulnList" class="list"></div>
+    <div class="small">
+      The lists and associations are in the center panel.
+    </div>
   </div>
 
-  <!-- CENTER : Associations & compute -->
+  <!-- CENTER: Entries → Exits → Targets → Details → Vuln Assoc → Links → Results -->
   <div class="panel" id="panelAssociations">
     <h3>Associations & compute</h3>
 
@@ -69,6 +63,9 @@
     <label>Attacker entry points (multi)</label>
     <select multiple id="selEntriesAll" size="6"></select>
 
+    <label>Attacker exit points (multi)</label>
+    <select multiple id="selExitsAll" size="6"></select>
+
     <div class="row ceiling-row">
       <label for="maxPaths">Path ceiling</label>
       <input type="number" id="maxPaths" min="100" value="2000">
@@ -76,8 +73,36 @@
 
     <hr>
 
-    <h3>Target links</h3>
+    <h3>Targets</h3>
+    <div id="targetList" class="list"></div>
 
+    <h3>Details / editor</h3>
+    <div id="details" class="col small">Select a target or attacker.</div>
+
+    <hr>
+
+    <!-- NEW: Vulnerability association BEFORE link creation -->
+    <h3>Vulnerabilities association</h3>
+    <div class="row">
+      <div class="col">
+        <label>Target</label>
+        <select id="selTargetAssoc"></select>
+      </div>
+      <div class="col">
+        <label>Vulnerabilities (multi)</label>
+        <select id="selVulnsAssoc" multiple size="6"></select>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="btnAttachVulns">Attach vulnerabilities</button>
+      <button id="btnDetachVulns" class="ghost">Detach vulnerabilities</button>
+      <span class="small" id="assocStatus">Pick a target and some vulnerabilities.</span>
+    </div>
+
+    <hr>
+
+    <h3>Target links</h3>
     <div class="row">
       <select id="linkSource"></select>
       <select id="linkDest" multiple size="4"></select>
@@ -120,17 +145,10 @@
     </h3>
 
     <div id="results" class="path-list"></div>
-
   </div>
 
-  <!-- RIGHT : Details + tutorial + diagram -->
-  <div class="panel" id="panelDetails">
-    
-    <h3>Details / editor</h3>
-    <div id="details" class="col small">Select an attacker...</div>
-
-    <hr>
-
+  <!-- RIGHT: only Tutorial + Diagram -->
+  <div class="panel" id="panelDetailsRight">
     <h3>Tutorial</h3>
     <ol id="tutorial" class="small"></ol>
 
@@ -143,13 +161,10 @@
       <button id="btnDownloadSVG" class="ghost">Download SVG</button>
       <span id="svgSize" class="small">—</span>
     </div>
-
   </div>
 
 </div>
 
-<!-- Main application bootstrap -->
 <script type="module" src="./js/main.js"></script>
-
 </body>
 </html>
