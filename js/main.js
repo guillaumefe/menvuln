@@ -1,4 +1,4 @@
-// Entry point for the ENVULN client-side app (fixed + simulation-ready)
+// Entry point for the ENVULN client-side app (mouse-driven simulation ready)
 
 import { el, norm } from './helpers.js';
 import * as StateMod from './state.js';
@@ -24,7 +24,7 @@ import {
   enableTopButtons
 } from './simulation/index.js';
 
-// IMPORTANT: load scenarios so they are actually registered
+// Ensure scenarios are registered
 import './simulation/scenarios.js';
 
 /* ---------- Local runtime helpers ---------- */
@@ -39,6 +39,24 @@ function emitStateChanged() {
   document.dispatchEvent(new CustomEvent('state:changed'));
 }
 
+/* ---------- Small DOM util for options ---------- */
+function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.name, selected = new Set(), keepPrev = true } = {}){
+  if(!selectEl) return;
+  const prev = selectEl.value;
+  const prevSelected = new Set([...(selectEl.selectedOptions || [])].map(o => o.value));
+  selectEl.innerHTML = '';
+  items.forEach(item => {
+    const opt = document.createElement('option');
+    opt.value = String(getValue(item));
+    opt.textContent = String(getLabel(item));
+    if (selected.has(opt.value) || (keepPrev && prevSelected.has(opt.value))) opt.selected = true;
+    selectEl.appendChild(opt);
+  });
+  if (keepPrev && prev && [...selectEl.options].some(o => o.value === prev)) {
+    selectEl.value = prev;
+  }
+}
+
 /* ---------- Life cycle: init ---------- */
 async function init(){
   const loaded = loadFromLocal();
@@ -47,25 +65,30 @@ async function init(){
     if (typeof StateMod.hydrate === 'function') {
       StateMod.hydrate(loaded);
     } else {
-      StateMod.State.version = loaded.version || StateMod.State.version;
-      StateMod.State.vulns   = loaded.vulns || [];
-      StateMod.State.targets = (loaded.targets || []).map(t => ({ id: t.id, name: t.name, vulns: new Set(t.vulns), final: !!t.final }));
-      StateMod.State.attackers = (loaded.attackers || []).map(a => ({ id: a.id, name: a.name, entries: new Set(a.entries) }));
+      StateMod.State.version   = loaded.version || StateMod.State.version;
+      StateMod.State.vulns     = loaded.vulns || [];
+      StateMod.State.targets   = (loaded.targets || []).map(t => ({ id: t.id, name: t.name, vulns: new Set(t.vulns), final: !!t.final }));
+      StateMod.State.attackers = (loaded.attackers || []).map(a => ({
+        id: a.id, name: a.name,
+        entries: new Set(a.entries),
+        exits: new Set(a.exits || []) // tolerate absence in storage
+      }));
       StateMod.State.edges = {
-        direct:  convertEdge(loaded.edges?.direct),
-        lateral: convertEdge(loaded.edges?.lateral),
-        contains:convertEdge(loaded.edges?.contains),
+        direct:   convertEdge(loaded.edges?.direct),
+        lateral:  convertEdge(loaded.edges?.lateral),
+        contains: convertEdge(loaded.edges?.contains),
       };
     }
   }
   (StateMod.State.targets || []).forEach(t => StateMod.ensureEdgeMaps(t.id));
 
   renderAllUI();
-  wireAddControls();  // make the “Add” buttons work
-  wireLinksUI();      // add/remove link wiring
-  wireUI();           // top buttons + simulation
+  wireAddControls();    // “Add” buttons
+  wireVulnAssoc();      // attach/detach vulnerabilities block
+  wireLinksUI();        // links add/remove wiring
+  wireUI();             // top buttons + simulation
 
-  // initial “changed” so right panel & selects hydrate
+  // initial “changed” so right panel & selectors hydrate
   document.dispatchEvent(new CustomEvent('state:changed'));
 }
 
@@ -76,12 +99,47 @@ function convertEdge(obj){
   return out;
 }
 
+/* ---------- Extra selectors population (new UI) ---------- */
+function populateExtraSelectors(state = StateMod.State){
+  // Attacker exit points
+  const selExitsAll = el('selExitsAll');
+  setOptions(selExitsAll, state.targets || []);
+
+  // Vulnerability association block
+  const selTargetAssoc = el('selTargetAssoc');
+  const selVulnsAssoc  = el('selVulnsAssoc');
+  setOptions(selTargetAssoc, state.targets || []);
+  setOptions(selVulnsAssoc, state.vulns || []);
+}
+
+/* ---------- Hydrate exits multiselect from current attacker ---------- */
+function hydrateExitsSelect(state = StateMod.State){
+  const selAttacker = el('selAttacker');
+  const selExitsAll = el('selExitsAll');
+  if(!selAttacker || !selExitsAll) return;
+
+  const attackerId = selAttacker.value;
+  const attacker = (state.attackers || []).find(a => String(a.id) === String(attackerId));
+  const selectedSet = new Set(
+    attacker
+      ? [...(attacker.exits instanceof Set ? attacker.exits : new Set(attacker.exits || []))].map(String)
+      : []
+  );
+
+  [...selExitsAll.options].forEach(opt => {
+    opt.selected = selectedSet.has(opt.value);
+  });
+}
+
+/* ---------- Render all UI ---------- */
 function renderAllUI(){
   renderAttackers(StateMod.State);
   renderTargets(StateMod.State);
   renderVulns(StateMod.State);
-  populateSelectors(StateMod.State);
-  hydrateEntriesSelect();
+  populateSelectors(StateMod.State);  // lists.js (attacker, entries, link selectors)
+  populateExtraSelectors(StateMod.State); // new selectors here
+  hydrateEntriesSelect(StateMod.State);
+  hydrateExitsSelect(StateMod.State);
   renderLinksInspector();
   renderDetailsPanel();
 }
@@ -132,6 +190,82 @@ function wireAddControls(){
         renderAllUI();
       } catch (e) { alert(e.message || 'Failed to add vulnerability'); }
     };
+  }
+}
+
+/* ---------- Vulnerability association wiring ---------- */
+function wireVulnAssoc(){
+  const btnAttach = el('btnAttachVulns');
+  const btnDetach = el('btnDetachVulns');
+
+  if(btnAttach){
+    btnAttach.onclick = () => {
+      const targetId = el('selTargetAssoc')?.value;
+      const vulnIds  = [...(el('selVulnsAssoc')?.selectedOptions || [])].map(o=>o.value);
+      if(!targetId) return alert('Pick a target to attach vulnerabilities to.');
+      if(!vulnIds.length) return alert('Pick one or more vulnerabilities.');
+      try {
+        vulnIds.forEach(vId => StateMod.toggleVulnOnTarget(targetId, vId, true));
+        emitStateChanged();
+        renderAllUI();
+        const s = el('assocStatus'); if(s) s.textContent = `Attached ${vulnIds.length} vuln(s).`;
+      } catch(e){
+        alert(e.message || 'Attach failed');
+      }
+    };
+  }
+
+  if(btnDetach){
+    btnDetach.onclick = () => {
+      const targetId = el('selTargetAssoc')?.value;
+      const vulnIds  = [...(el('selVulnsAssoc')?.selectedOptions || [])].map(o=>o.value);
+      if(!targetId) return alert('Pick a target to detach vulnerabilities from.');
+      if(!vulnIds.length) return alert('Pick one or more vulnerabilities.');
+      try {
+        vulnIds.forEach(vId => StateMod.toggleVulnOnTarget(targetId, vId, false));
+        emitStateChanged();
+        renderAllUI();
+        const s = el('assocStatus'); if(s) s.textContent = `Detached ${vulnIds.length} vuln(s).`;
+      } catch(e){
+        alert(e.message || 'Detach failed');
+      }
+    };
+  }
+
+  // Keep exits & entries in sync when the attacker changes
+  const selAttacker = el('selAttacker');
+  if (selAttacker && !selAttacker._wiredForExits) {
+    selAttacker.addEventListener('change', () => {
+      hydrateEntriesSelect(StateMod.State);
+      hydrateExitsSelect(StateMod.State);
+    });
+    selAttacker._wiredForExits = true;
+  }
+
+  // Persist entries multi-select
+  const selEntriesAll = el('selEntriesAll');
+  if (selEntriesAll && !selEntriesAll._wiredPersist) {
+    selEntriesAll.addEventListener('change', () => {
+      const attackerId = el('selAttacker')?.value;
+      if(!attackerId) return;
+      const picked = [...selEntriesAll.selectedOptions].map(o => o.value);
+      StateMod.setAttackerEntries(attackerId, picked);
+      emitStateChanged();
+    });
+    selEntriesAll._wiredPersist = true;
+  }
+
+  // Persist exits multi-select
+  const selExitsAll = el('selExitsAll');
+  if (selExitsAll && !selExitsAll._wiredPersist) {
+    selExitsAll.addEventListener('change', () => {
+      const attackerId = el('selAttacker')?.value;
+      if(!attackerId) return;
+      const picked = [...selExitsAll.selectedOptions].map(o => o.value);
+      StateMod.setAttackerExits(attackerId, picked);
+      emitStateChanged();
+    });
+    selExitsAll._wiredPersist = true;
   }
 }
 
@@ -188,7 +322,7 @@ async function onComputePaths(){
     };
     const maxPaths = parseInt(el('maxPaths')?.value || '2000', 10);
 
-    // FIX: computeAllPaths returns { paths, cycles, truncated }
+    // computeAllPaths returns { paths, cycles, truncated }
     const out = computeAllPaths(StateMod.State, opts, maxPaths);
     lastResults = out.paths || [];
     lastMeta = { cycles: !!out.cycles, truncated: !!out.truncated };
