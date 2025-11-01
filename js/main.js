@@ -1,5 +1,6 @@
 // js/main.js
 // Main UI and app logic. Immediate persistence on all relevant selectors.
+// Includes a playback controller that cycles through computed paths.
 
 import './simulation/scenarios.js';
 
@@ -26,19 +27,25 @@ import {
 let lastResults = [];
 let lastMeta = { cycles: false, truncated: false };
 
-/* ---------------- Status ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Status                                                                     */
+/* -------------------------------------------------------------------------- */
 function renderStatus(s) {
   const sEl = el('status');
   if (sEl) sEl.textContent = s;
 }
 
-/* ---------------- Global rerender ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Global rerender                                                            */
+/* -------------------------------------------------------------------------- */
 function emitStateChanged() {
   try { saveToLocal(StateMod.State); } catch {}
   renderAllUI();
 }
 
-/* ---------------- Select helper ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Select helper                                                              */
+/* -------------------------------------------------------------------------- */
 function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.name, selectedSet = new Set() } = {}) {
   if (!selectEl) return;
   const prev = selectEl.value;
@@ -55,7 +62,9 @@ function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.n
   }
 }
 
-/* ---------------- Initialization ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Initialization                                                             */
+/* -------------------------------------------------------------------------- */
 async function init() {
   const loaded = loadFromLocal();
   if (loaded) StateMod.hydrate(loaded);
@@ -74,7 +83,9 @@ async function init() {
   wirePlaybackControls();
 }
 
-/* ---------------- Rendering ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Rendering                                                                  */
+/* -------------------------------------------------------------------------- */
 function renderAllUI() {
   renderAttackers(StateMod.State);
   renderTargets(StateMod.State);
@@ -118,7 +129,9 @@ function hydrateVulnSelectors(state = StateMod.State) {
   setOptions(el('selVulnsForElement'), state.vulns);
 }
 
-/* ---------------- Add controls ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Add controls                                                               */
+/* -------------------------------------------------------------------------- */
 function wireAddControls() {
   el('btnAddAttacker').onclick = () => {
     const name = norm(el('attackerName').value);
@@ -146,7 +159,9 @@ function wireAddControls() {
   };
 }
 
-/* ---------------- Attacker selection ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Attacker selection                                                         */
+/* -------------------------------------------------------------------------- */
 function wireAttackerSelection() {
   el('selAttacker').addEventListener('change', () => {
     hydrateEntries();
@@ -154,7 +169,9 @@ function wireAttackerSelection() {
   });
 }
 
-/* ---------------- Entries (real-time + clear) ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Entries (real-time + clear)                                                */
+/* -------------------------------------------------------------------------- */
 function wireEntries() {
   const sel = el('selEntriesAll');
   const btnClear = el('btnClearEntries');
@@ -173,7 +190,6 @@ function wireEntries() {
     btnClear.onclick = () => {
       const attId = el('selAttacker').value;
       if (!attId) return;
-      // clear UI selection first so the user gets immediate feedback
       [...sel.options].forEach(o => o.selected = false);
       StateMod.setAttackerEntries(attId, []);
       emitStateChanged();
@@ -181,7 +197,9 @@ function wireEntries() {
   }
 }
 
-/* ---------------- Exits (real-time + clear) ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Exits (real-time + clear)                                                  */
+/* -------------------------------------------------------------------------- */
 function wireExits() {
   const sel = el('selExitsAll');
   const btnClear = el('btnClearExits');
@@ -200,7 +218,6 @@ function wireExits() {
     btnClear.onclick = () => {
       const attId = el('selAttacker').value;
       if (!attId) return;
-      // clear UI selection first for immediate feedback
       [...sel.options].forEach(o => o.selected = false);
       StateMod.setAttackerExits(attId, []);
       emitStateChanged();
@@ -208,7 +225,9 @@ function wireExits() {
   }
 }
 
-/* ---------------- Vulnerabilities (real-time + clear) ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Vulnerabilities (real-time + clear)                                        */
+/* -------------------------------------------------------------------------- */
 function wireVulns() {
   const selTarget = el('selVulnElement');
   const selVulns = el('selVulnsForElement');
@@ -242,7 +261,9 @@ function wireVulns() {
   }
 }
 
-/* ---------------- Results rendering ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Results rendering                                                          */
+/* -------------------------------------------------------------------------- */
 function renderResultsList(results) {
   const cont = el('results');
   const svgSizeEl = el('svgSize');
@@ -279,7 +300,9 @@ function renderResultsList(results) {
   playback_setDataset(results);
 }
 
-/* ---------------- Top actions ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Top actions (compute/export/import/download)                               */
+/* -------------------------------------------------------------------------- */
 function wireTopActions() {
   const chkOnlyVuln = el('chkOnlyVuln');
 
@@ -368,7 +391,9 @@ function wireTopActions() {
   }
 }
 
-/* ---------------- Simulation button ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Simulation launcher button (auto-scenarios)                                */
+/* -------------------------------------------------------------------------- */
 function wireSimulationButton() {
   const btn = el('btnSimu');
   if (!btn) return;
@@ -388,8 +413,15 @@ function wireSimulationButton() {
   };
 }
 
-/* ---------------- Playback controller ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Playback controller                                                        */
+/* -------------------------------------------------------------------------- */
 
+/**
+ * The playback controller advances through the currently displayed result set.
+ * It shows the diagram for the active index and steps automatically when playing.
+ * Speed is controlled by the Simulation speed slider.
+ */
 const playback = {
   dataset: [],
   index: 0,
@@ -401,7 +433,7 @@ const playback = {
 
 function playback_setDataset(results) {
   playback.dataset = Array.isArray(results) ? results.slice() : [];
-  if (playback.index >= playback.dataset.length) playback.index = 0;
+  playback.index = 0;
   playback_updateButtons();
 }
 
@@ -474,9 +506,7 @@ function playback_stop() {
 function playback_restart() {
   playback.index = 0;
   playback_renderCurrent();
-  if (playback.playing) {
-    playback_tick();
-  }
+  if (playback.playing) playback_tick();
 }
 
 function playback_stepForward() {
@@ -495,9 +525,7 @@ function playback_setSpeed(mult) {
   playback.speed = Math.max(0.2, Math.min(3, +mult || 1));
   const lab = el('simSpeedValue');
   if (lab) lab.textContent = `×${playback.speed.toFixed(1)}`;
-  if (playback.playing) {
-    playback_tick();
-  }
+  if (playback.playing) playback_tick();
 }
 
 function playback_resetToStart() {
@@ -513,6 +541,39 @@ function playback_showIndex(idx, pauseAfter = false) {
   if (pauseAfter) playback_pause();
 }
 
+/* If there are no results yet, Play can trigger a compute then start */
+function playback_computeIfNeededAndStart() {
+  if (playback.dataset.length > 0) {
+    playback_play();
+    return;
+  }
+  const opts = {
+    includeLateral: !!el('includeLateral')?.checked,
+    includeContains: !!el('includeContains')?.checked
+  };
+  const max = parseInt(el('maxPaths')?.value || '2000', 10);
+  const out = computeAllPaths(StateMod.State, opts, max);
+  lastResults = out.paths || [];
+  lastMeta = { cycles: !!out.cycles, truncated: !!out.truncated };
+
+  const chkOnlyVuln = el('chkOnlyVuln');
+  const hasVulnsEverywhere = p =>
+    Array.isArray(p.vulnsPerNode) && p.vulnsPerNode.every(v => Array.isArray(v) && v.length > 0);
+  const display = chkOnlyVuln && chkOnlyVuln.checked
+    ? lastResults.filter(hasVulnsEverywhere)
+    : lastResults;
+
+  renderResultsList(display);
+
+  if (display.length) {
+    playback_renderCurrent();
+    playback_play();
+  } else {
+    renderStatus('0 paths • check entries/exits and links');
+  }
+}
+
+/* Wire page controls */
 function wirePlaybackControls() {
   const btnPP = el('btnPlayPause');
   const btnStop = el('btnStop');
@@ -523,10 +584,15 @@ function wirePlaybackControls() {
 
   if (btnPP) {
     btnPP.onclick = () => {
-      if (playback.playing) playback_pause();
-      else {
-        if (!el('diagramBox')?.querySelector('svg')) playback_renderCurrent();
-        playback_play();
+      if (playback.playing) {
+        playback_pause();
+      } else {
+        if (!playback.dataset.length) {
+          playback_computeIfNeededAndStart();
+        } else {
+          if (!el('diagramBox')?.querySelector('svg')) playback_renderCurrent();
+          playback_play();
+        }
       }
     };
   }
@@ -550,7 +616,9 @@ function playback_setExternalResults(results) {
   playback_resetToStart();
 }
 
-/* ---------------- Boot ---------------- */
+/* -------------------------------------------------------------------------- */
+/* Boot                                                                       */
+/* -------------------------------------------------------------------------- */
 window.__envuln_boot = {
   State: StateMod.State,
   computeAllPaths,
