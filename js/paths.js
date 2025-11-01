@@ -1,37 +1,8 @@
 // js/paths.js
-// Pure graph path enumeration utilities for ENVULN (client-side).
-// Exports:
-//   adjacency(state, id, opts)
-//   isDAG(state, opts)
-//   enumeratePaths_DAG(state, starts, opts)
-//   enumeratePaths_General(state, starts, opts, maxPaths)
-//   computePathsForAttacker(state, attackerId, opts, maxPaths)
-//   computeAllPaths(state, opts, maxPathsPerAttacker)
-//   nameOfTarget(state, id)
+// Graph path enumeration for ENVULN
 
 /**
- * @typedef {Object} State
- * @property {Array<{id:string,name:string,entries?:Array<string>|Set<string>}>} attackers
- * @property {Array<{id:string,name:string,vulns?:Array<string>|Set<string>,final?:boolean}>} targets
- * @property {Array<{id:string,name:string}>} vulns
- * @property {{[id:string]:Set<string>}} edges.direct
- * @property {{[id:string]:Set<string>}} edges.lateral
- * @property {{[id:string]:Set<string>}} edges.contains
- */
-
-/**
- * Options for enumeration
- * @typedef {Object} Options
- * @property {boolean} includeLateral
- * @property {boolean} includeContains
- */
-
-/* ------------------ helpers ------------------ */
-
-/**
- * Return a map id -> target object (for quick lookup).
- * @param {State} state
- * @returns {Record<string, any>}
+ * Return a map id -> target
  */
 function targetMap(state){
   const m = Object.create(null);
@@ -39,40 +10,17 @@ function targetMap(state){
   return m;
 }
 
-/**
- * Name resolver (exported for reuse by other modules).
- * @param {State} state
- * @param {string} id
- * @returns {string}
- */
 export function nameOfTarget(state, id){
   return (state.targets || []).find(t => t.id === id)?.name || String(id || '');
 }
 
-/**
- * Safe accessor for an edge-set map. Returns an array (may be empty).
- * @param {{[id:string]:Set<string>}} map
- * @param {string} id
- * @returns {Array<string>}
- */
 function outsFrom(map, id){
   if(!map) return [];
   const s = map[id];
   if(!s) return [];
-  // Normalize in case storage rehydrated Sets to Arrays
   return Array.isArray(s) ? s.slice() : Array.from(s);
 }
 
-/* ------------------ adjacency ------------------ */
-
-/**
- * Return outgoing neighbors of a node id according to options.
- * Does not mutate state.
- * @param {State} state
- * @param {string} id
- * @param {Options} opts
- * @returns {Array<string>}
- */
 export function adjacency(state, id, opts = { includeLateral: true, includeContains: true }){
   const out = new Set();
   const e = state.edges || {};
@@ -82,15 +30,6 @@ export function adjacency(state, id, opts = { includeLateral: true, includeConta
   return Array.from(out);
 }
 
-/* ------------------ DAG detection ------------------ */
-
-/**
- * Detect whether the directed graph (under opts) is acyclic (a DAG).
- * DFS with 3-color marking. Pure (read-only).
- * @param {State} state
- * @param {Options} opts
- * @returns {boolean} true if DAG (no back-edge found)
- */
 export function isDAG(state, opts = { includeLateral: true, includeContains: true }){
   const WHITE = 0, GRAY = 1, BLACK = 2;
   const color = Object.create(null);
@@ -99,8 +38,8 @@ export function isDAG(state, opts = { includeLateral: true, includeContains: tru
 
   function dfs(u){
     color[u] = GRAY;
-    const neigh = adjacency(state, u, opts);
-    for(const v of neigh){
+    const nexts = adjacency(state, u, opts);
+    for(const v of nexts){
       if(color[v] === GRAY){ hasCycle = true; return; }
       if(color[v] === WHITE) dfs(v);
       if(hasCycle) return;
@@ -115,32 +54,19 @@ export function isDAG(state, opts = { includeLateral: true, includeContains: tru
   return !hasCycle;
 }
 
-/* ------------------ DAG enumeration (memoized) ------------------ */
-
-/**
- * Enumerate all simple paths from a starting node in a DAG.
- * Memoization avoids re-work.
- * Returns array of arrays of target ids (each path is a sequence of ids).
- *
- * @param {State} state
- * @param {string} startId
- * @param {Map<string, Array<Array<string>>>} memo
- * @param {Options} opts
- * @returns {Array<Array<string>>}
- */
 function enumeratePaths_DAG_from(state, startId, memo, opts){
   if(memo.has(startId)) return memo.get(startId);
 
   const results = [];
-  const outs = adjacency(state, startId, opts);
+  const nexts = adjacency(state, startId, opts);
   const t = (state.targets || []).find(x => x.id === startId);
   const isFinal = !!(t && t.final);
 
-  if(outs.length === 0 || isFinal){
+  if(nexts.length === 0 || isFinal){
     results.push([startId]);
   }
 
-  for(const v of outs){
+  for(const v of nexts){
     const subs = enumeratePaths_DAG_from(state, v, memo, opts);
     for(const sub of subs){
       results.push([startId, ...sub]);
@@ -151,13 +77,6 @@ function enumeratePaths_DAG_from(state, startId, memo, opts){
   return results;
 }
 
-/**
- * Enumerate all paths from multiple start nodes in a DAG.
- * @param {State} state
- * @param {Array<string>} starts
- * @param {Options} opts
- * @returns {Array<Array<string>>}
- */
 export function enumeratePaths_DAG(state, starts, opts){
   const memo = new Map();
   let all = [];
@@ -168,18 +87,6 @@ export function enumeratePaths_DAG(state, starts, opts){
   return all;
 }
 
-/* ------------------ General graph enumeration (DFS, pruning) ------------------ */
-
-/**
- * Enumerate simple paths (no repeated nodes in a path) from a set of starts.
- * Stops when maxPaths is reached. Detects cycles encountered (returns cycles flag).
- *
- * @param {State} state
- * @param {Array<string>} starts
- * @param {Options} opts
- * @param {number} maxPaths
- * @returns {{ paths: Array<Array<string>>, cycles: boolean }}
- */
 export function enumeratePaths_General(state, starts, opts, maxPaths = 5000){
   const paths = [];
   let cycles = false;
@@ -190,15 +97,15 @@ export function enumeratePaths_General(state, starts, opts, maxPaths = 5000){
     if(paths.length >= maxPaths) return;
     const t = (state.targets || []).find(x => x.id === u);
     const isFinal = !!(t && t.final);
-    const outs = adj(u);
+    const nexts = adj(u);
 
-    if(outs.length === 0 || isFinal){
+    if(nexts.length === 0 || isFinal){
       paths.push([...stack, u]);
       return;
     }
 
     visited.add(u);
-    for(const v of outs){
+    for(const v of nexts){
       if(visited.has(v)){ cycles = true; continue; }
       dfs(v, visited, [...stack, u]);
       if(paths.length >= maxPaths) break;
@@ -214,18 +121,6 @@ export function enumeratePaths_General(state, starts, opts, maxPaths = 5000){
   return { paths, cycles };
 }
 
-/* ------------------ Public compute functions ------------------ */
-
-/**
- * Compute paths (normalized objects) for a single attacker.
- * Returns:
- *   { paths: Array<{ attackerId, attackerName, nodes:Array<targetObj>, vulnsPerNode:Array<Array<string>> }>, cycles: boolean, truncated: boolean }
- *
- * @param {State} state
- * @param {string} attackerId
- * @param {Options} opts
- * @param {number} maxPaths
- */
 export function computePathsForAttacker(
   state,
   attackerId,
@@ -235,57 +130,49 @@ export function computePathsForAttacker(
   const attacker = (state.attackers || []).find(a => a.id === attackerId);
   if(!attacker) return { paths: [], cycles: false, truncated: false };
 
-  const startsRaw = attacker.entries || [];
-  const starts = Array.isArray(startsRaw) ? startsRaw.slice() : Array.from(startsRaw);
+  const starts = Array.from(attacker.entries || []);
   if(starts.length === 0) return { paths: [], cycles: false, truncated: false };
 
   const dag = isDAG(state, opts);
 
-  let pathNodeArrays = [];
+  let nodePaths = [];
   let cycles = false;
 
   if(dag){
-    pathNodeArrays = enumeratePaths_DAG(state, starts, opts);
+    nodePaths = enumeratePaths_DAG(state, starts, opts);
   } else {
     const out = enumeratePaths_General(state, starts, opts, maxPaths);
-    pathNodeArrays = out.paths;
+    nodePaths = out.paths;
     cycles = out.cycles;
   }
 
+  const exits = new Set(Array.from(attacker.exits || []).map(String));
+  if(exits.size > 0){
+    nodePaths = nodePaths.filter(path => exits.has(path[path.length - 1]));
+  }
+
   const targetsById = targetMap(state);
-  const normalized = pathNodeArrays.map(nodes => {
-    const nodeObjs = nodes.map(id => targetsById[id]).filter(Boolean);
-
-    const vulnsPerNode = nodes.map(id => {
-      const t = targetsById[id];
-      if(!t) return [];
-      const list = Array.isArray(t.vulns) ? t.vulns : (t.vulns ? Array.from(t.vulns) : []);
-      return list.map(vId => {
-        const v = (state.vulns || []).find(x => x.id === vId);
-        return v ? v.name : vId;
-      }).filter(Boolean);
-    });
-
+  const normalized = nodePaths.map(nodes => {
     return {
       attackerId: attacker.id,
       attackerName: attacker.name,
-      nodes: nodeObjs,
-      vulnsPerNode
+      nodes: nodes.map(id => targetsById[id]).filter(Boolean),
+      vulnsPerNode: nodes.map(id => {
+        const t = targetsById[id];
+        if(!t) return [];
+        const list = Array.isArray(t.vulns) ? t.vulns : Array.from(t.vulns || []);
+        return list.map(vId => {
+          const v = (state.vulns || []).find(x => x.id === vId);
+          return v ? v.name : vId;
+        }).filter(Boolean);
+      })
     };
   });
 
-  const truncated = (!dag && pathNodeArrays.length >= maxPaths);
+  const truncated = (!dag && nodePaths.length >= maxPaths);
   return { paths: normalized, cycles, truncated };
 }
 
-/**
- * Compute all paths for all attackers (flattened).
- * Returns { paths, cycles, truncated }
- *
- * @param {State} state
- * @param {Options} opts
- * @param {number} maxPathsPerAttacker
- */
 export function computeAllPaths(
   state,
   opts = { includeLateral: true, includeContains: true },
