@@ -216,3 +216,14 @@ button.ghost:hover {
 .path:hover {
   background: rgba(255,255,255,0.04);
 }
+
+/* =====================
+   Playback
+===================== */
+/* Playback disabled look */
+#playbackRow.is-disabled {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+  pointer-events: none; /* clicks blocked while disabled */
+}
+
