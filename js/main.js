@@ -95,41 +95,43 @@ function bridgeSimulationPlayback() {
     speed.addEventListener('input', applySpeed);
   }
 
-  // play/pause
-  if (btnPP) {
-    btnPP.addEventListener('click', async () => {
-      if (!simIsRunning()) {
-        simPlay();
-        updateLabels(); // should display "Pause"
-        await runSimulation({ renderCallback: () => renderAllUI() });
-        updateLabels();
-      } else {
-        simToggle();
-        updateLabels();
-      }
-    });
-  }
+// Play / Pause
+if (btnPP) {
+  btnPP.addEventListener('click', async () => {
+    if (!simIsRunning()) {
+      // starting a run → enable Playback
+      setPlaybackEnabled(true);
+      simPlay();
+      await runSimulation({ renderCallback: () => renderAllUI() });
+      // run finished → disable Playback again
+      setPlaybackEnabled(false);
+    } else {
+      simToggle();
+    }
+  });
+}
 
-  // stop: fully stop and hide cursor (handled in simStop)
-  if (btnStop) {
-    btnStop.addEventListener('click', () => {
-      if (simIsRunning()) simStop();
-      updateLabels(); // back to Play
-    });
-  }
+// Stop
+if (btnStop) {
+  btnStop.addEventListener('click', () => {
+    if (simIsRunning()) simStop();
+    // immediately grey out / disable
+    setPlaybackEnabled(false);
+  });
+}
 
-  // restart: stop then start fresh
-  if (btnRestart) {
-    btnRestart.addEventListener('click', async () => {
-      if (simIsRunning()) simStop();
-      setTimeout(async () => {
-        simPlay();
-        updateLabels();
-        await runSimulation({ renderCallback: () => renderAllUI() });
-        updateLabels();
-      }, 60);
-    });
-  }
+// Restart
+if (btnRestart) {
+  btnRestart.addEventListener('click', async () => {
+    if (simIsRunning()) simStop();
+    setTimeout(async () => {
+      setPlaybackEnabled(true); // enable at start
+      simPlay();
+      await runSimulation({ renderCallback: () => renderAllUI() });
+      setPlaybackEnabled(false); // disable when finished
+    }, 60);
+  });
+}
 
   // step back/forward: move the cursor a few timeline ticks and remain paused
   if (btnStepBack) {
@@ -146,6 +148,18 @@ function bridgeSimulationPlayback() {
   }
 
   updateLabels();
+}
+
+function setPlaybackEnabled(enabled) {
+  const row = document.getElementById('playbackRow');
+  const ids = ['btnPlayPause','btnStop','btnRestart','btnStepBack','btnStepForward'];
+  ids.forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.disabled = !enabled;
+  });
+  if (row) {
+    row.classList.toggle('is-disabled', !enabled);
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -217,8 +231,9 @@ async function init() {
   wireLinksUI();
   wireTopActions();
   wireSimulationButton();
-  wirePlaybackControls();       // dataset playback
-  bridgeSimulationPlayback();   // simulation playback
+  wirePlaybackControls();
+  bridgeSimulationPlayback();
+  setPlaybackEnabled(false);
   ensureSimScenarioLinkButtons();
 }
 
@@ -539,6 +554,7 @@ function wireSimulationButton() {
   btn.onclick = async () => {
     try {
       disableTopButtons(true);
+      setPlaybackEnabled(true);
       btn.textContent = 'Simulating…';
       btn.disabled = true;
       await runSimulation({ renderCallback: () => renderAllUI() });
@@ -547,7 +563,8 @@ function wireSimulationButton() {
       btn.disabled = false;
       enableTopButtons();
       renderAllUI();
-      playback_resetToStart();
+      setPlaybackEnabled(false);
+      playback_resetToStart?.();
     }
   };
 }
