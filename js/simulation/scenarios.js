@@ -1,63 +1,34 @@
-// js/simulation/scenarios.js
-// Register mouse-driven UI scenarios for ENVULN
-//
-// IMPORTANT: Works with current gesture engine in js/simulation/index.js
-//
-// It simulates REAL user interactions: typing, clicking,
-// ensuring elements exist and dispatching DOM events correctly.
+/* =========================================================
+   simulation/scenarios.js
+   Example automated UX scenarios using the gesture engine
+   ========================================================= */
 
 import { registerScenario, g } from './index.js';
 
-registerScenario("Auto Build Demo", async () => {
-
-  /* ------------------------------
-     Step 1 — Create targets
-     ------------------------------ */
-  await g.typeInto(g.el('targetName'), "Host A");
-  await g.click(g.el('btnAddTarget'));
-  await g.wait(300);
-
-  await g.typeInto(g.el('targetName'), "Host B");
-  await g.click(g.el('btnAddTarget'));
-  await g.wait(300);
-
-  /* ------------------------------
-     Step 2 — Create attacker
-     ------------------------------ */
-  await g.typeInto(g.el('attackerName'), "Operator");
+registerScenario('Add attacker', async () => {
+  await g.typeInto(g.el('attackerName'), 'Attacker A');
   await g.click(g.el('btnAddAttacker'));
-  await g.wait(400);
+  await g.wait(300);
+});
 
-  /* ------------------------------
-     Step 3 — Attacker can enter Host A
-     ------------------------------ */
-  const selAtt = g.el('selAttacker');
-  g.selectByText(selAtt, "Operator");
-  await g.wait(400);
+registerScenario('Add target', async () => {
+  await g.typeInto(g.el('targetName'), 'Target A');
+  await g.click(g.el('btnAddTarget'));
+  await g.wait(300);
+});
 
-  const selEntries = g.el('selEntriesAll');
-  g.multiSelectByTexts(selEntries, ["Host A"]);
-  await g.wait(400);
+registerScenario('Assign entries and exits', async () => {
+  const attackerSelect = g.el('selAttacker');
+  if (!attackerSelect) return;
+  await g.moveToEl(attackerSelect);
+  await g.click(attackerSelect);
+  g.selectByText(attackerSelect, attackerSelect.options[0]?.textContent);
 
-  /* ------------------------------
-     Step 4 — Add Direct Link: Host A → Host B
-     ------------------------------ */
-  const src = g.el('linkSource');
-  g.selectByText(src, "Host A");
-  await g.wait(250);
+  const targets = [...g.el('selEntriesAll').options].map(o => o.textContent);
+  if (targets.length >= 2) {
+    g.multiSelectByTexts(g.el('selEntriesAll'), [targets[0]]);
+    g.multiSelectByTexts(g.el('selExitsAll'), [targets[1]]);
+  }
 
-  const dst = g.el('linkDest');
-  g.multiSelectByTexts(dst, ["Host B"]);
-  await g.wait(250);
-
-  await g.click(g.el('btnAddLink'));
-  await g.wait(600);
-
-  /* ------------------------------
-     Step 5 — Compute Attack Paths
-     ------------------------------ */
-  await g.click(g.el('btnFindPaths'));
-  await g.wait(600);
-
-  /* Done! */
+  await g.wait(300);
 });
