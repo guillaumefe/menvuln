@@ -14,6 +14,7 @@ import {
   renderVulns,
   populateSelectors,
   renderLinksInspector,
+  setOptions,
 } from './ui/lists.js';
 import { wireLinksUI } from './ui/links.js';
 import { computeAllPaths } from './paths.js';
@@ -46,25 +47,6 @@ function renderStatus(s) {
 function emitStateChanged() {
   try { saveToLocal(StateMod.State); } catch {}
   renderAllUI();
-}
-
-/* -------------------------------------------------------------------------- */
-/* Select helper                                                              */
-/* -------------------------------------------------------------------------- */
-function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.name, selected = new Set() } = {}) {
-  if (!selectEl) return;
-  const prev = selectEl.value;
-  selectEl.innerHTML = '';
-  (items || []).forEach(item => {
-    const opt = document.createElement('option');
-    opt.value = String(getValue(item));
-    opt.textContent = getLabel(item);
-    if (selected.has(opt.value)) opt.selected = true;
-    selectEl.appendChild(opt);
-  });
-  if (prev && [...selectEl.options].some(o => o.value === prev)) {
-    selectEl.value = prev;
-  }
 }
 
 /* -------------------------------------------------------------------------- */
