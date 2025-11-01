@@ -68,22 +68,24 @@ function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.n
 /* -------------------------------------------------------------------------- */
 /* Playback UI helpers                                                        */
 /* -------------------------------------------------------------------------- */
+let playbackControlsEnabled = false; // source of truth for enabling the row
+
 function setPlayPauseVisual(isPlaying) {
   const btn = el('btnPlayPause');
   if (!btn) return;
-  // MP3-like icons
   btn.textContent = isPlaying ? '⏸' : '▶';
 }
 
 function setPlaybackEnabled(enabled) {
+  playbackControlsEnabled = !!enabled;
   const ids = ['btnPlayPause','btnStop','btnRestart','btnStepBack','btnStepForward'];
   ids.forEach(id => {
     const b = document.getElementById(id);
-    if (b) b.disabled = !enabled;
+    if (b) b.disabled = !playbackControlsEnabled || !playback.dataset.length;
   });
-  // Optional row styling if you wrapped the row with an id
   const row = document.getElementById('playbackRow');
-  if (row) row.classList.toggle('is-disabled', !enabled);
+  if (row) row.classList.toggle('is-disabled', !playbackControlsEnabled);
+  if (!playbackControlsEnabled) setPlayPauseVisual(false);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -108,21 +110,13 @@ function resetAllApp() {
   const resultsEl = el('results');    if (resultsEl) resultsEl.innerHTML = '';
   const diagram = el('diagramBox');
   if (diagram) {
-    // Remove every trace: SVG, cursor, style width/height
     diagram.innerHTML = '';
     diagram.removeAttribute('style');
-
-    const oldSvg = diagram.querySelector('svg');
-    if (oldSvg) oldSvg.remove();
-
-    // Put placeholder back cleanly
-    const ph = document.createElement('div');
-    ph.className = 'small';
-    ph.textContent = 'Select a path → Diagram';
+    const oldSvg = diagram.querySelector('svg'); if (oldSvg) oldSvg.remove();
+    const ph = document.createElement('div'); ph.className = 'small'; ph.textContent = 'Select a path → Diagram';
     diagram.appendChild(ph);
   }
 
-  // Reset labels
   const svgSizeEl1 = el('svgSize'); if (svgSizeEl1) svgSizeEl1.textContent = '—';
   const statusEl  = el('status');   if (statusEl)  statusEl.textContent = '—';
 
@@ -138,10 +132,8 @@ function resetAllApp() {
 /* -------------------------------------------------------------------------- */
 /* Bridge playback controls to simulation engine                              */
 /* -------------------------------------------------------------------------- */
-/* NOTE: no button bindings here to avoid double-binding with dataset playback.
-   We only keep this placeholder to preserve the call site in init(). */
 function bridgeSimulationPlayback() {
-  // no-op: buttons are managed in wirePlaybackControls() with runtime routing
+  // intentionally empty: unified handlers in wirePlaybackControls()
 }
 
 /* -------------------------------------------------------------------------- */
@@ -211,9 +203,12 @@ async function init() {
   wireLinksUI();
   wireTopActions();
   wireSimulationButton();
-  wirePlaybackControls();     // unified handlers (route to sim if running)
-  bridgeSimulationPlayback(); // no-op (kept for compatibility)
+  wirePlaybackControls();
+  bridgeSimulationPlayback();
   ensureSimScenarioLinkButtons();
+
+  // Playback disabled by default until a simulation is started
+  setPlaybackEnabled(false);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -543,7 +538,7 @@ function wireSimulationButton() {
     try {
       disableTopButtons(true);
       setPlaybackEnabled(true);
-      setPlayPauseVisual(true);
+      setPlayPauseVisual(true); // show "pause" while scenarios run
       btn.textContent = 'Simulating…';
       btn.disabled = true;
       await runSimulation({ renderCallback: () => renderAllUI() });
@@ -552,7 +547,7 @@ function wireSimulationButton() {
       btn.disabled = false;
       enableTopButtons();
       setPlayPauseVisual(false);
-      setPlaybackEnabled(false);
+      setPlaybackEnabled(false); // re-disable controls when scenarios end
       renderAllUI();
       playback_resetToStart?.();
     }
@@ -578,21 +573,13 @@ function resetForFreshSimulation() {
   const resultsEl = el('results');    if (resultsEl) resultsEl.innerHTML = '';
   const diagram = el('diagramBox');
   if (diagram) {
-    // Remove every trace: SVG, cursor, style width/height
     diagram.innerHTML = '';
     diagram.removeAttribute('style');
-
-    const oldSvg = diagram.querySelector('svg');
-    if (oldSvg) oldSvg.remove();
-
-    // Put placeholder back cleanly
-    const ph = document.createElement('div');
-    ph.className = 'small';
-    ph.textContent = 'Select a path → Diagram';
+    const oldSvg = diagram.querySelector('svg'); if (oldSvg) oldSvg.remove();
+    const ph = document.createElement('div'); ph.className = 'small'; ph.textContent = 'Select a path → Diagram';
     diagram.appendChild(ph);
   }
 
-  // Reset labels
   const svgSizeEl1 = el('svgSize'); if (svgSizeEl1) svgSizeEl1.textContent = '—';
   const statusEl  = el('status');   if (statusEl)  statusEl.textContent = '—';
 
@@ -642,6 +629,7 @@ function playback_renderCurrent() {
 }
 function playback_updateButtons() {
   const hasData = playback.dataset.length > 0;
+  const enableUI = playbackControlsEnabled && hasData;
   const btnPP = el('btnPlayPause');
   const btnStop = el('btnStop');
   const btnRestart = el('btnRestart');
@@ -649,7 +637,7 @@ function playback_updateButtons() {
   const btnStepForward = el('btnStepForward');
 
   [btnPP, btnStop, btnRestart, btnStepBack, btnStepForward].forEach(b => {
-    if (b) b.disabled = !hasData;
+    if (b) b.disabled = !enableUI;
   });
   if (btnPP) btnPP.textContent = playback.playing ? '⏸' : '▶';
 }
@@ -756,7 +744,6 @@ function wirePlaybackControls() {
 
   if (btnPP) {
     btnPP.onclick = () => {
-      // If simulation is running, route to simulation controls
       if (typeof simIsRunning === 'function' && simIsRunning()) {
         if (typeof simIsPaused === 'function' && simIsPaused()) {
           try { simPlay(); } catch {}
@@ -767,7 +754,6 @@ function wirePlaybackControls() {
         }
         return;
       }
-      // Otherwise: dataset playback
       if (playback.playing) {
         playback_pause();
       } else {
@@ -784,6 +770,7 @@ function wirePlaybackControls() {
     if (typeof simIsRunning === 'function' && simIsRunning()) {
       try { simStop(); } catch {}
       setPlayPauseVisual(false);
+      setPlaybackEnabled(false); // <- re-disable on stop
       return;
     }
     playback_stop();
@@ -791,6 +778,7 @@ function wirePlaybackControls() {
   if (btnRestart) btnRestart.onclick = () => {
     if (typeof simIsRunning === 'function' && simIsRunning()) {
       resetForFreshSimulation();
+      setPlaybackEnabled(true);
       return;
     }
     playback_restart();
@@ -799,7 +787,6 @@ function wirePlaybackControls() {
     if (typeof simIsRunning === 'function' && simIsRunning()) {
       try { simPause(); } catch {}
       setPlayPauseVisual(false);
-      // no "step back" in sim; just pause
       return;
     }
     playback_pause();
@@ -817,7 +804,6 @@ function wirePlaybackControls() {
   };
 
   if (speed) {
-    // set both speeds
     playback_setSpeed(speed.value || 1);
     try { simSetSpeed(parseFloat(speed.value || '1') || 1); } catch {}
     speed.addEventListener('input', () => {
