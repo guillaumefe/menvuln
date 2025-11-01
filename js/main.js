@@ -51,7 +51,7 @@ function emitStateChanged() {
 /* -------------------------------------------------------------------------- */
 /* Select helper                                                              */
 /* -------------------------------------------------------------------------- */
-function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.name, selectedSet = new Set() } = {}) {
+function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.name, selected = new Set() } = {}) {
   if (!selectEl) return;
   const prev = selectEl.value;
   selectEl.innerHTML = '';
@@ -59,7 +59,7 @@ function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.n
     const opt = document.createElement('option');
     opt.value = String(getValue(item));
     opt.textContent = getLabel(item);
-    if (selectedSet.has(opt.value)) opt.selected = true;
+    if (selected.has(opt.value)) opt.selected = true;
     selectEl.appendChild(opt);
   });
   if (prev && [...selectEl.options].some(o => o.value === prev)) {
@@ -70,7 +70,7 @@ function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.n
 /* -------------------------------------------------------------------------- */
 /* Playback UI helpers                                                        */
 /* -------------------------------------------------------------------------- */
-let playbackControlsEnabled = false; // source of truth for enabling the row
+let playbackControlsEnabled = false;
 
 function setPlayPauseVisual(isPlaying) {
   const btn = el('btnPlayPause');
@@ -91,25 +91,21 @@ function setPlaybackEnabled(enabled) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Full wipe (used by Reset All) — clears state + results + diagram + playback */
+/* Full wipe (used by Reset All)                                              */
 /* -------------------------------------------------------------------------- */
 function resetAllApp() {
-  // 1) stop any running simulation and remove cursor
   try { simStop(); } catch {}
   const cur = document.getElementById('__sim_cursor'); if (cur) cur.remove();
 
-  // 2) wipe domain state
   StateMod.State.attackers = [];
   StateMod.State.targets   = [];
   StateMod.State.vulns     = [];
   StateMod.State.edges     = { direct: {}, lateral: {}, contains: {} };
 
-  // 3) storage and last-results cache
   try { clearLocal(); } catch {}
   lastResults = [];
   lastMeta = { cycles: false, truncated: false };
 
-  // 4) clear UI
   const resultsEl = el('results');    if (resultsEl) resultsEl.innerHTML = '';
   const diagram   = el('diagramBox');
   if (diagram) {
@@ -128,25 +124,20 @@ function resetAllApp() {
   const inTar = el('targetName');   if (inTar) inTar.value = '';
   const inVul = el('vulnName');     if (inVul) inVul.value = '';
 
-  // 5) clear playback dataset and reset playback
   playback_setDataset([]);
   playback_resetToStart();
-
-  // 6) disable playback controls and rerender
   setPlaybackEnabled(false);
   setPlayPauseVisual(false);
   renderAllUI();
 }
 
 /* -------------------------------------------------------------------------- */
-/* Bridge playback controls to simulation engine                              */
+/* Simulation playback bridge                                                 */
 /* -------------------------------------------------------------------------- */
-function bridgeSimulationPlayback() {
-  // intentionally empty: unified handlers in wirePlaybackControls()
-}
+function bridgeSimulationPlayback() {}
 
 /* -------------------------------------------------------------------------- */
-/* Hidden buttons for scenarios that call add/remove link by clicking         */
+/* Hidden buttons for scenarios                                               */
 /* -------------------------------------------------------------------------- */
 function ensureSimScenarioLinkButtons() {
   const byId = (id) => document.getElementById(id);
@@ -216,7 +207,6 @@ async function init() {
   bridgeSimulationPlayback();
   ensureSimScenarioLinkButtons();
 
-  // playback disabled by default until a simulation is started
   setPlaybackEnabled(false);
   setPlayPauseVisual(false);
   playback_setDataset([]);
@@ -253,7 +243,7 @@ function hydrateEntries(state = StateMod.State) {
   if (!selAtt || !sel) return;
   const attacker = state.attackers.find(a => a.id === selAtt.value);
   const selected = attacker ? new Set([...attacker.entries].map(String)) : new Set();
-  setOptions(sel, state.targets, { selectedSet: selected });
+  setOptions(sel, state.targets, { selected });
 }
 
 function hydrateExits(state = StateMod.State) {
@@ -262,7 +252,7 @@ function hydrateExits(state = StateMod.State) {
   if (!selAtt || !sel) return;
   const attacker = state.attackers.find(a => a.id === selAtt.value);
   const selected = attacker ? new Set([...attacker.exits].map(String)) : new Set();
-  setOptions(sel, state.targets, { selectedSet: selected });
+  setOptions(sel, state.targets, { selected });
 }
 
 function hydrateVulnSelectors(state = StateMod.State) {
@@ -271,7 +261,7 @@ function hydrateVulnSelectors(state = StateMod.State) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Add controls + Reset All                                                   */
+/* Add controls                                                               */
 /* -------------------------------------------------------------------------- */
 function wireAddControls() {
   el('btnAddAttacker').onclick = () => {
@@ -320,7 +310,7 @@ function wireAttackerSelection() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Entries (real-time + clear)                                                */
+/* Entries                                                                    */
 /* -------------------------------------------------------------------------- */
 function wireEntries() {
   const sel = el('selEntriesAll');
@@ -348,7 +338,7 @@ function wireEntries() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Exits (real-time + clear)                                                  */
+/* Exits                                                                      */
 /* -------------------------------------------------------------------------- */
 function wireExits() {
   const sel = el('selExitsAll');
@@ -376,7 +366,7 @@ function wireExits() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Vulnerabilities (real-time + clear)                                        */
+/* Vulnerabilities                                                            */
 /* -------------------------------------------------------------------------- */
 function wireVulns() {
   const selTarget = el('selVulnElement');
@@ -419,7 +409,6 @@ function renderResultsList(results) {
   const svgSizeEl = el('svgSize');
   cont.innerHTML = '';
   if (!results.length) {
-    // Provide a useful reason when the list is empty
     const filterOn = !!el('chkOnlyVuln')?.checked;
     const msg = (filterOn && (lastResults?.length || 0) > 0)
       ? 'No paths match the "Only vulnerable paths" filter.'
@@ -456,7 +445,7 @@ function renderResultsList(results) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Top actions (compute/export/import/download)                               */
+/* Top actions for compute/export/import                                      */
 /* -------------------------------------------------------------------------- */
 function wireTopActions() {
   const chkOnlyVuln = el('chkOnlyVuln');
@@ -469,7 +458,6 @@ function wireTopActions() {
     renderStatus(parts.join(' • '));
   };
 
-  // Consider a path "vulnerable everywhere" only from the second node onward
   const hasVulnsEverywhere = p =>
     Array.isArray(p.vulnsPerNode) &&
     p.vulnsPerNode.slice(1).length > 0 &&
@@ -550,7 +538,7 @@ function wireTopActions() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Simulation launcher button (auto-scenarios)                                */
+/* Simulation launcher                                                        */
 /* -------------------------------------------------------------------------- */
 function wireSimulationButton() {
   const btn = el('btnSimu');
@@ -615,7 +603,7 @@ function resetForFreshSimulation() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Results playback (diagram paging)                                          */
+/* Results playback                                                           */
 /* -------------------------------------------------------------------------- */
 const playback = {
   dataset: [],
@@ -665,14 +653,12 @@ function playback_updateButtons() {
   const simPaused  = (typeof simIsPaused  === 'function') && simIsPaused();
   const hasData    = playback.dataset.length > 0;
 
-  // enable the row when (a) sim is running OR (b) dataset is present, and the row is globally enabled
   const enableRow  = playbackControlsEnabled && (simRunning || hasData);
 
   [btnPP, btnStop, btnRestart, btnStepBack, btnStepForward].forEach(b => {
     if (b) b.disabled = !enableRow;
   });
 
-  // step buttons: use sim stepping when sim is running, otherwise dataset edges
   if (enableRow) {
     if (simRunning) {
       if (btnStepBack)    btnStepBack.disabled    = !(typeof simCanStepBack === 'function' && simCanStepBack());
@@ -683,7 +669,6 @@ function playback_updateButtons() {
     }
   }
 
-  // icon logic: simulation state wins; dataset playback is used when no sim is running
   if (btnPP) {
     if (simRunning) {
       btnPP.textContent = simPaused ? '▶' : '⏸';
@@ -772,7 +757,6 @@ function playback_computeIfNeededAndStart() {
   lastMeta = { cycles: !!out.cycles, truncated: !!out.truncated };
 
   const chkOnlyVuln = el('chkOnlyVuln');
-  // Same "everywhere" definition as in wireTopActions
   const hasVulnsEverywhere = p =>
     Array.isArray(p.vulnsPerNode) &&
     p.vulnsPerNode.slice(1).length > 0 &&
@@ -787,7 +771,6 @@ function playback_computeIfNeededAndStart() {
     playback_renderCurrent();
     playback_play();
   } else {
-    // Provide a status hint about probable cause
     const filterOn = !!el('chkOnlyVuln')?.checked;
     const anyExits = (StateMod.State.attackers || []).some(a => (a.exits instanceof Set ? a.exits.size : (a.exits || []).length) > 0);
     if (filterOn && (lastResults?.length || 0) > 0) {
@@ -801,7 +784,7 @@ function playback_computeIfNeededAndStart() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Wire dataset + simulation playback controls                                */
+/* Playback control wiring                                                    */
 /* -------------------------------------------------------------------------- */
 function wirePlaybackControls() {
   const btnPP         = el('btnPlayPause');
@@ -811,7 +794,6 @@ function wirePlaybackControls() {
   const btnStepForward= el('btnStepForward');
   const speed         = el('simSpeed');
 
-  // Play / Pause
   if (btnPP) {
     btnPP.onclick = () => {
       if (simIsRunning && simIsRunning()) {
@@ -825,7 +807,7 @@ function wirePlaybackControls() {
         playback_updateButtons();
         return;
       }
-      // Dataset playback
+
       if (playback.playing) {
         playback_pause();
       } else {
@@ -840,7 +822,6 @@ function wirePlaybackControls() {
     };
   }
 
-  // Stop
   if (btnStop) {
     btnStop.onclick = () => {
       if (simIsRunning && simIsRunning()) {
@@ -851,7 +832,6 @@ function wirePlaybackControls() {
         playback_updateButtons();
         return;
       }
-      // Dataset playback stop
       playback_stop();
       playback_updateButtons();
     };
@@ -887,7 +867,6 @@ function wirePlaybackControls() {
     };
   }
 
-  // Step back
   if (btnStepBack) {
     btnStepBack.onclick = () => {
       if (simIsRunning && simIsRunning()) {
@@ -903,7 +882,6 @@ function wirePlaybackControls() {
     };
   }
 
-  // Step forward
   if (btnStepForward) {
     btnStepForward.onclick = () => {
       if (simIsRunning && simIsRunning()) {
@@ -919,7 +897,6 @@ function wirePlaybackControls() {
     };
   }
 
-  // Speed
   if (speed) {
     playback_setSpeed(speed.value || 1);
     try { simSetSpeed(parseFloat(speed.value || '1') || 1); } catch {}
@@ -931,13 +908,12 @@ function wirePlaybackControls() {
     });
   }
 
-  // initial clean state
   playback_updateButtons();
   playback_renderCurrent();
 }
 
 /* -------------------------------------------------------------------------- */
-/* Convenience export if needed elsewhere                                     */
+/* Convenience export                                                         */
 /* -------------------------------------------------------------------------- */
 function playback_setExternalResults(results) {
   playback_setDataset(results);
