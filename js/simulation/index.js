@@ -1,6 +1,8 @@
 /* =========================================================
    simulation/index.js
    UI-driven simulation with a fake cursor (mouse gestures)
+   Controller supports play / pause / stop / restart / step
+   and live speed changes tied to the UI slider.
    ========================================================= */
 
 const SCENARIOS = [];
@@ -10,48 +12,86 @@ export function registerScenario(name, fn, weight = 1) {
   SCENARIOS.push({ name, fn, weight: Math.max(0, +weight || 1) });
 }
 
-/* ---------------- Speed control ----------------
-   The speed slider in the UI controls all simulated waits
-   and cursor motions. Higher speed -> shorter waits. */
-function getSpeedMultiplier() {
+/* ---------------- Global controller state ---------------- */
+const CTRL = {
+  paused: false,
+  stopRequested: false,
+  running: false,
+  stepArmed: false,          // single-step gate
+  speed: 1.0                 // 0.2..3.0
+};
+
+/* Speed helpers */
+function readSpeedFromUI() {
   const el = document.getElementById('simSpeed');
   const v = el ? parseFloat(el.value) : 1;
-  // Clamp to the same min/max as the input
-  return Math.max(0.2, Math.min(3, Number.isFinite(v) ? v : 1));
+  CTRL.speed = Math.max(0.2, Math.min(3, Number.isFinite(v) ? v : 1));
+  const lab = document.getElementById('simSpeedValue');
+  if (lab) lab.textContent = `×${CTRL.speed.toFixed(1)}`;
+}
+readSpeedFromUI();
+
+/* Exposed controls */
+export function simSetSpeed(mult) {
+  CTRL.speed = Math.max(0.2, Math.min(3, +mult || 1));
+}
+
+export function simPlay() {
+  CTRL.paused = false;
+  CTRL.stepArmed = false;
+}
+
+export function simPause() {
+  CTRL.paused = true;
+  CTRL.stepArmed = false;
+}
+
+export function simToggle() {
+  CTRL.paused = !CTRL.paused;
+  CTRL.stepArmed = false;
+}
+
+export function simStop() {
+  CTRL.stopRequested = true;
+  CTRL.paused = false;     // let sleepers exit promptly
+  CTRL.stepArmed = false;
+}
+
+export function simStep() {
+  // Arms a single “release” through the pause gate
+  CTRL.stepArmed = true;
 }
 
 /* ---------------- DOM helpers ---------------- */
 const $ = (id) => document.getElementById(id);
-function sleep(ms) {
-  // Scale down delays when speed is higher, and vice-versa
-  const spd = getSpeedMultiplier();
-  const effective = Math.max(10, Math.floor(ms / spd));
-  return new Promise((res) => setTimeout(res, effective));
-}
 
-export function disableTopButtons(disabled = true) {
-  [
-    'btnSimu',
-    'btnFindPaths',
-    'btnExportODS',
-    'btnImportJSON',
-    'btnExportJSON'
-  ].forEach(id => {
-    const b = $(id);
-    if (b) b.disabled = disabled;
+/* Sleep that honors pause/step/stop and speed */
+function sleep(ms) {
+  const base = Math.max(0, +ms || 0);
+  const scaled = Math.max(10, Math.floor(base / Math.max(0.2, CTRL.speed)));
+
+  return new Promise((resolve) => {
+    const start = performance.now();
+    function loop() {
+      if (CTRL.stopRequested) return resolve(); // caller will check running flag
+      // Pause gate: either paused=false, or a one-shot step unlock is armed
+      if (CTRL.paused && !CTRL.stepArmed) {
+        // stay paused, poll again
+        return setTimeout(loop, 40);
+      }
+      // consume step if armed
+      if (CTRL.stepArmed) CTRL.stepArmed = false;
+
+      const elapsed = performance.now() - start;
+      if (elapsed >= scaled) return resolve();
+      setTimeout(loop, 16);
+    }
+    loop();
   });
 }
 
-export function enableTopButtons() {
-  disableTopButtons(false);
-}
-
-/* =========================================================
-   Gesture engine
-   ========================================================= */
-
+/* Cursor rendering */
 const CURSOR_ID = '__sim_cursor';
-
 function ensureCursor() {
   let c = document.getElementById(CURSOR_ID);
   if (c) return c;
@@ -81,24 +121,34 @@ async function moveToPoint(x, y, msPer100px = 120) {
   const dist = Math.hypot(dx, dy) || 1;
   const steps = Math.max(10, Math.floor(dist / 10));
 
-  // Scale total duration by speed (higher speed -> shorter)
-  const spd = getSpeedMultiplier();
-  const dur = Math.max(80, Math.floor((dist / 100) * msPer100px) / spd);
+  // duration is speed-aware
+  const dur = Math.max(80, Math.floor((dist / 100) * msPer100px) / Math.max(0.2, CTRL.speed));
   const dt = dur / steps;
 
   for (let i = 1; i <= steps; i++) {
+    if (CTRL.stopRequested) break;
+    // pause gate
+    while (CTRL.paused && !CTRL.stepArmed && !CTRL.stopRequested) {
+      // wait while paused
+      // a tiny sleep avoids busy-wait
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(40);
+    }
+    if (CTRL.stepArmed) CTRL.stepArmed = false;
+
     const t = i / steps;
     const nx = from.x + dx * t;
     const ny = from.y + dy * t;
     cur.style.left = `${nx}px`;
     cur.style.top = `${ny}px`;
+    // eslint-disable-next-line no-await-in-loop
     await sleep(dt);
   }
 }
 
 async function moveToEl(node, offX = 6, offY = 6) {
   if (!node) return;
-  node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  try { node.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch {}
   await sleep(150);
   const r = node.getBoundingClientRect();
   await moveToPoint(r.left + Math.min(r.width - 2, offX), r.top + Math.min(r.height - 2, offY));
@@ -110,12 +160,8 @@ function fireMouse(node) {
   const centerY = r.top + r.height / 2;
   for (const type of ['mousedown', 'mouseup', 'click']) {
     node.dispatchEvent(new MouseEvent(type, {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: centerX,
-      clientY: centerY,
-      button: 0
+      bubbles: true, cancelable: true, view: window,
+      clientX: centerX, clientY: centerY, button: 0
     }));
   }
 }
@@ -136,6 +182,7 @@ async function typeInto(input, text, perCharMs = 28) {
   for (const ch of String(text)) {
     input.value += ch;
     input.dispatchEvent(new Event('input', { bubbles: true }));
+    // eslint-disable-next-line no-await-in-loop
     await sleep(perCharMs);
   }
 }
@@ -168,6 +215,7 @@ function multiSelectByTexts(selectEl, labels = []) {
   selectEl.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+/* Public gesture API used by scenarios */
 export const g = {
   el: (id) => document.getElementById(id),
   wait: sleep,
@@ -176,7 +224,11 @@ export const g = {
   typeInto,
   selectByText,
   multiSelectByTexts,
-  disableTopButtons,
+  disableTopButtons: (disabled = true) => {
+    ['btnSimu','btnFindPaths','btnExportODS','btnImportJSON','btnExportJSON'].forEach(id => {
+      const b = $(id); if (b) b.disabled = disabled;
+    });
+  },
   ensureInView: (node, block = 'center') => {
     try { node?.scrollIntoView({ block, behavior: 'smooth' }); } catch {}
   }
@@ -187,34 +239,51 @@ export const g = {
    ========================================================= */
 
 async function runScenarioObject(sc) {
-  disableTopButtons(true);
   try {
     await sc.fn(g);
   } catch (e) {
-    console.error(e);
-  } finally {
-    disableTopButtons(false);
+    // swallow if stopped; log otherwise
+    if (!CTRL.stopRequested) console.error(e);
   }
 }
 
 export async function runSimulation(opts = {}) {
-  disableTopButtons(true);
+  if (CTRL.running) return;         // avoid concurrent runs
+  CTRL.stopRequested = false;
+  CTRL.paused = false;
+  CTRL.stepArmed = false;
+  readSpeedFromUI();
+
+  // disable top buttons while running
+  g.disableTopButtons(true);
+  CTRL.running = true;
+
   for (const sc of SCENARIOS) {
+    if (CTRL.stopRequested) break;
     await runScenarioObject(sc);
+    if (CTRL.stopRequested) break;
     await sleep(300);
   }
-  enableTopButtons();
+
+  CTRL.running = false;
+  g.disableTopButtons(false);
 
   if (typeof opts.renderCallback === 'function') {
     try { opts.renderCallback(); } catch {}
   }
 }
 
+/* Convenience status getters for UI */
+export function simIsRunning() { return CTRL.running; }
+export function simIsPaused() { return CTRL.paused; }
+export function simHasStopRequest() { return CTRL.stopRequested; }
+
+/* Default export for completeness */
 export default {
   registerScenario,
   runSimulation,
-  disableTopButtons,
-  enableTopButtons,
+  simPlay, simPause, simToggle, simStop, simStep, simSetSpeed,
+  simIsRunning, simIsPaused, simHasStopRequest,
   g,
   SCENARIOS
 };
