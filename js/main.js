@@ -630,17 +630,31 @@ function playback_renderCurrent() {
   }
 }
 function playback_updateButtons() {
-  const hasData = playback.dataset.length > 0;
-  const enableUI = playbackControlsEnabled && hasData;
-  const btnPP = el('btnPlayPause');
-  const btnStop = el('btnStop');
-  const btnRestart = el('btnRestart');
-  const btnStepBack = el('btnStepBack');
-  const btnStepForward = el('btnStepForward');
+  const btnPP         = el('btnPlayPause');
+  const btnStop       = el('btnStop');
+  const btnRestart    = el('btnRestart');
+  const btnStepBack   = el('btnStepBack');
+  const btnStepForward= el('btnStepForward');
+
+  const simRunning = (typeof simIsRunning === 'function') && simIsRunning();
+  const hasData    = playback.dataset.length > 0;
+  const enableRow  = playbackControlsEnabled && (simRunning || hasData);
 
   [btnPP, btnStop, btnRestart, btnStepBack, btnStepForward].forEach(b => {
-    if (b) b.disabled = !enableUI;
+    if (b) b.disabled = !enableRow;
   });
+
+  if (enableRow) {
+    if (simRunning) {
+      if (btnStepBack)    btnStepBack.disabled    = !simCanStepBack();
+      if (btnStepForward) btnStepForward.disabled = !simCanStepForward();
+    } else {
+      // dataset playback : griser aux bords
+      if (btnStepBack)    btnStepBack.disabled    = playback.index <= 0;
+      if (btnStepForward) btnStepForward.disabled = playback.index >= (playback.dataset.length - 1);
+    }
+  }
+
   if (btnPP) btnPP.textContent = playback.playing ? '⏸' : '▶';
 }
 function playback_tick() {
@@ -677,13 +691,19 @@ function playback_restart() {
 }
 function playback_stepForward() {
   if (!playback.dataset.length) return;
-  playback.index = (playback.index + 1) % playback.dataset.length;
-  playback_renderCurrent();
+  if (playback.index < playback.dataset.length - 1) {
+    playback.index += 1;
+    playback_renderCurrent();
+  }
+  playback_updateButtons();
 }
 function playback_stepBack() {
   if (!playback.dataset.length) return;
-  playback.index = (playback.index - 1 + playback.dataset.length) % playback.dataset.length;
-  playback_renderCurrent();
+  if (playback.index > 0) {
+    playback.index -= 1;
+    playback_renderCurrent();
+  }
+  playback_updateButtons();
 }
 function playback_setSpeed(mult) {
   playback.speed = Math.max(0.2, Math.min(3, +mult || 1));
@@ -772,7 +792,7 @@ function wirePlaybackControls() {
     if (typeof simIsRunning === 'function' && simIsRunning()) {
       try { simStop(); } catch {}
       setPlayPauseVisual(false);
-      setPlaybackEnabled(false); // <- re-disable on stop
+      setPlaybackEnabled(false);
       return;
     }
     playback_stop();
@@ -788,7 +808,7 @@ function wirePlaybackControls() {
   if (btnStepBack) btnStepBack.onclick = () => {
     if (simIsRunning && simIsRunning()) {
       try { simPause(); } catch {}
-      try { simStepBack(10); } catch {}   // recule “quelques étapes”
+      try { simStepBack(10); } catch {}
       setPlayPauseVisual(false);
       playback_updateButtons();
       return;
@@ -800,7 +820,7 @@ function wirePlaybackControls() {
   if (btnStepForward) btnStepForward.onclick = () => {
     if (simIsRunning && simIsRunning()) {
       try { simPause(); } catch {}
-      try { simStepForward(10); } catch {} // avance “quelques étapes”
+      try { simStepForward(10); } catch {}
       setPlayPauseVisual(false);
       playback_updateButtons();
       return;
