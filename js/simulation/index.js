@@ -48,6 +48,53 @@ function timelineGoto(index) {
   safeUpdateButtons();
 }
 
+/* ---------------- Simulation artifacts cleanup ----------------
+   (On efface uniquement ce que la simulation a déposé dans le DOM) */
+const SIM_TRACES = {
+  nodes: new Set(),   // éléments DOM créés par la simulation
+  classAdds: []       // [node, className] ajoutées temporairement
+};
+
+// Marquer un élément DOM comme « appartenant à la simulation »
+export function simMarkEl(node) {
+  if (!node) return null;
+  try { node.setAttribute('data-sim', ''); } catch {}
+  SIM_TRACES.nodes.add(node);
+  return node;
+}
+
+// Ajouter une classe temporaire à retirer au cleanup
+export function simAddTempClass(node, className) {
+  if (!node || !className) return;
+  try {
+    node.classList.add(className);
+    SIM_TRACES.classAdds.push([node, className]);
+  } catch {}
+}
+
+// Nettoyer uniquement les artefacts de simulation (curseur, overlays, classes, timeline)
+export function simCleanupUI() {
+  // 1) retirer le curseur
+  const c = document.getElementById(CURSOR_ID);
+  if (c) c.remove();
+
+  // 2) enlever tous les éléments marqués data-sim
+  try {
+    document.querySelectorAll('[data-sim]').forEach(n => n.remove());
+  } catch {}
+
+  // 3) retirer les classes temporaires
+  SIM_TRACES.classAdds.forEach(([n, cls]) => {
+    try { n.classList.remove(cls); } catch {}
+  });
+  SIM_TRACES.classAdds.length = 0;
+
+  // 4) reset timeline
+  timelineClear();
+
+  safeUpdateButtons();
+}
+
 /* ---------------- Speed helpers ---------------- */
 function readSpeedFromUI() {
   const el = document.getElementById('simSpeed');
@@ -65,25 +112,25 @@ export function simSetSpeed(mult) {
 export function simPlay() {
   CTRL.paused = false;
   CTRL.stepArmed = false;
+  safeUpdateButtons();
 }
 export function simPause() {
   CTRL.paused = true;
   CTRL.stepArmed = false;
+  safeUpdateButtons();
 }
 export function simToggle() {
   CTRL.paused = !CTRL.paused;
   CTRL.stepArmed = false;
+  safeUpdateButtons();
 }
 export function simStop() {
   CTRL.stopRequested = true;
   CTRL.paused = false;     // allow sleepers to exit
   CTRL.stepArmed = false;
 
-  // remove cursor and reset timeline on full stop
-  const c = document.getElementById(CURSOR_ID);
-  if (c) c.remove();
-  timelineClear();
-  safeUpdateButtons();
+  // Nettoie uniquement les artefacts de simulation
+  simCleanupUI();
 }
 export function simStep() {
   // allow one pause gate traversal
@@ -296,6 +343,9 @@ export const g = {
   typeInto,
   selectByText,
   multiSelectByTexts,
+  // tagging helpers for cleanup
+  markEl: simMarkEl,
+  addClassTemp: simAddTempClass,
   // keep toolbar toggling consistent
   disableTopButtons: (disabled = true) => disableTopButtons(disabled),
   ensureInView: (node, block = 'center') => {
@@ -315,11 +365,6 @@ async function runScenarioObject(sc) {
   }
 }
 
-function removeCursor() {
-  const c = document.getElementById('__sim_cursor');
-  if (c) c.remove();
-}
-
 export async function runSimulation(opts = {}) {
   if (CTRL.running) return;     // avoid concurrent runs
   CTRL.stopRequested = false;
@@ -327,12 +372,10 @@ export async function runSimulation(opts = {}) {
   CTRL.stepArmed = false;
   readSpeedFromUI();
 
-  // fresh cursor/timeline
-  timelineClear();
-  const existing = document.getElementById(CURSOR_ID);
-  if (existing) existing.remove();
+  // Surface « simulation » propre (n'efface pas les données métier)
+  simCleanupUI();
 
-  g.disableTopButtons(true);
+  disableTopButtons(true);
   CTRL.running = true;
 
   for (const sc of SCENARIOS) {
@@ -343,8 +386,7 @@ export async function runSimulation(opts = {}) {
   }
 
   CTRL.running = false;
-  g.disableTopButtons(false);
-  removeCursor();
+  disableTopButtons(false);
 
   if (typeof opts.renderCallback === 'function') {
     try { opts.renderCallback(); } catch {}
@@ -362,7 +404,9 @@ export default {
   runSimulation,
   simPlay, simPause, simToggle, simStop, simStep, simSetSpeed,
   simStepBack, simStepForward,
+  simCanStepBack, simCanStepForward,
   simIsRunning, simIsPaused, simHasStopRequest,
+  simCleanupUI, simMarkEl, simAddTempClass,
   g,
   SCENARIOS
 };
