@@ -100,7 +100,6 @@ export function renderLinksInspector() {
     makeGroup('contains', State.edges.contains, 'contains'),
   ].join('');
 
-  // Delegate remove actions
   box.onclick = (e) => {
     const btn = e.target.closest('button[data-to]');
     if (!btn) return;
@@ -109,12 +108,22 @@ export function renderLinksInspector() {
     removeLink(type, src, to);
     saveToLocal(State);
     renderLinksInspector();
+    // Keep the destination multiselect visually in sync
+    syncDestSelectionFromState();
   };
 }
 
 /* =========================
    Event wiring
 ========================= */
+
+let _syncDestSelectionFromState = null;
+function syncDestSelectionFromState() {
+  // late-bound to avoid accessing elements before ready
+  if (typeof _syncDestSelectionFromState === 'function') {
+    _syncDestSelectionFromState();
+  }
+}
 
 export function wireLinksUI() {
   const srcSel   = el('linkSource');
@@ -124,9 +133,7 @@ export function wireLinksUI() {
 
   if (!srcSel || !dstSel || !typeSel) return;
 
-  // Keep the destination multiselect in sync with the current state for
-  // the chosen source and link type.
-  const syncDestSelectionFromState = () => {
+  _syncDestSelectionFromState = () => {
     const from = srcSel.value;
     const type = typeSel.value;
     const map = getLinkMapByType(type) || {};
@@ -136,10 +143,10 @@ export function wireLinksUI() {
     renderLinksInspector();
   };
 
-  srcSel.addEventListener('change', syncDestSelectionFromState);
-  typeSel.addEventListener('change', syncDestSelectionFromState);
+  srcSel.addEventListener('change', _syncDestSelectionFromState);
+  typeSel.addEventListener('change', _syncDestSelectionFromState);
 
-  // Apply additions/removals whenever the destination selection changes.
+  // Real-time persistence on every change
   dstSel.addEventListener('change', () => {
     const from = srcSel.value;
     if (!from) return;
@@ -151,11 +158,9 @@ export function wireLinksUI() {
     const before = new Set(Array.isArray(map[from]) ? map[from] : Array.from(map[from] || []));
     const after  = new Set([...dstSel.selectedOptions].map(o => o.value));
 
-    // Add newly selected destinations
     for (const to of after) {
       if (!before.has(to)) addLink(type, from, to);
     }
-    // Remove deselected destinations
     for (const to of before) {
       if (!after.has(to)) removeLink(type, from, to);
     }
@@ -164,7 +169,7 @@ export function wireLinksUI() {
     renderLinksInspector();
   });
 
-  // Clear only the UI selection (and state via the change handler)
+  // Clear selection button: clears UI and state through the change handler
   if (btnClear) {
     btnClear.onclick = () => {
       [...dstSel.options].forEach(o => o.selected = false);
@@ -173,5 +178,5 @@ export function wireLinksUI() {
   }
 
   populateLinkSelectors();
-  syncDestSelectionFromState();
+  _syncDestSelectionFromState();
 }
