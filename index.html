@@ -10,11 +10,12 @@
 <body>
 <div class="wrap">
 
-  <!-- LEFT: Add-only -->
+  <!-- LEFT: Add + Lists (edit/delete) -->
   <div class="panel" id="panelEntities">
-    <h3>Ajout des entités</h3>
-    <div class="small">Les attaquants, cibles et vulnérabilités sont créés ici.</div>
+    <h3>Ajout & Éléments</h3>
+    <div class="small">Crée les entités ici. Les listes ci-dessous permettent de renommer ou supprimer.</div>
 
+    <!-- Add forms -->
     <div class="form-block">
       <label>Nouvel attaquant</label>
       <div class="row">
@@ -40,16 +41,32 @@
     </div>
 
     <hr>
-    <div class="small">
-      Configurez les relations avec le panneau central.
+
+    <!-- Lists with inline edit/delete -->
+    <h3>Attaquants</h3>
+    <div id="attackerList" class="list">
+      <!--
+        Chaque item injecté par JS doit ressembler à :
+        <div class="list-item">
+          <span class="item-name">Attacker A</span>
+          <div class="item-actions">
+            <button class="btn-rename" data-type="attacker" data-id="...">Rename</button>
+            <button class="btn-delete ghost" data-type="attacker" data-id="...">Delete</button>
+          </div>
+        </div>
+      -->
     </div>
+
+    <h3>Cibles</h3>
+    <div id="targetList" class="list"></div>
+
+    <h3>Vulnérabilités</h3>
+    <div id="vulnList" class="list"></div>
   </div>
 
-  <!-- CENTER -->
+  <!-- CENTER: Compute, associations, links, results -->
   <div class="panel" id="panelAssociations">
-    <h3>Configuration & Associations</h3>
-
-    <div class="small">Sélectionnez les entités pour définir leurs interactions.</div>
+    <h3>Configuration & Calcul</h3>
 
     <div class="row">
       <div class="col">
@@ -63,12 +80,6 @@
       </div>
     </div>
 
-    <label>Entrées attaquant (multi)</label>
-    <select multiple id="selEntriesAll" size="6"></select>
-
-    <label>Sorties attaquant (multi)</label>
-    <select multiple id="selExitsAll" size="6"></select>
-
     <div class="row ceiling-row">
       <label for="maxPaths">Limite de chemins</label>
       <input type="number" id="maxPaths" min="100" value="2000">
@@ -76,14 +87,9 @@
 
     <hr>
 
-    <!-- Removed the "Targets" block entirely -->
+    <!-- IMPORTANT: le bloc "Détails / Édition" + "Entry points" + "Exit points" A ÉTÉ SUPPRIMÉ -->
 
-    <h3>Détails / Édition</h3>
-    <div id="details" class="col small">Sélectionnez une cible ou un attaquant.</div>
-
-    <hr>
-
-    <h3>Association vulnérabilités</h3>
+    <h3>Association des vulnérabilités</h3>
     <div class="row">
       <div class="col">
         <label>Cible</label>
@@ -148,7 +154,7 @@
     <div id="results" class="path-list"></div>
   </div>
 
-  <!-- RIGHT -->
+  <!-- RIGHT: Tutorial + Diagram -->
   <div class="panel" id="panelDetailsRight">
     <h3>Tutoriel</h3>
     <ol id="tutorial" class="small"></ol>
@@ -156,7 +162,7 @@
     <hr>
 
     <h3>Diagramme d’attaque</h3>
-    <div id="diagramBox" class="uml"><div class="small">Chemin sélectionné → Diagramme</div></div>
+    <div id="diagramBox" class="uml"><div class="small">Choisis un chemin → Diagramme</div></div>
 
     <div class="row">
       <button id="btnDownloadSVG" class="ghost">Télécharger SVG</button>
