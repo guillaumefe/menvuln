@@ -227,3 +227,44 @@ button.ghost:hover {
   pointer-events: none; /* clicks blocked while disabled */
 }
 
+/* ==== Left panel list items: layout with actions on the right ==== */
+
+/* 1) Chaque entrée devient une ligne flex */
+#panelEntities .list > .item,
+#panelEntities .list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between; /* pousse les actions à droite */
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+/* 2) Le bloc texte (nom, Entries/Vulns…) prend toute la largeur disponible */
+#panelEntities .list > .item .info,
+#panelEntities .list > div .info {
+  flex: 1 1 auto;
+  min-width: 0; /* évite les débordements */
+}
+
+/* 3) Si un wrapper .actions existe, on aligne proprement les boutons */
+#panelEntities .list > .item .actions,
+#panelEntities .list > div .actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto; /* colle à droite */
+}
+
+/* 4) Si les boutons sont directement enfants (pas de .actions),
+      on pousse le premier bouton à droite, le second suit avec un petit gap */
+#panelEntities .list > div > button:first-of-type {
+  margin-left: auto;
+}
+#panelEntities .list > div > button + button {
+  margin-left: 8px;
+}
+
+/* 5) Confort visuel des boutons (pas de wrap) */
+#panelEntities .list button {
+  white-space: nowrap;
+}
