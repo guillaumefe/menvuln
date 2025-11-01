@@ -1,6 +1,7 @@
 // js/simulation/index.js
 // Simulation module: cursor-driven UI scenarios (client-side only, no server)
-// Exports: registerScenario(name, fn, weight), runRandomScenario(), runScenario(name)
+// Exports: registerScenario(name, fn, weight), runSimulation(), runScenario(name),
+//          runRandomScenario(), disableTopButtons(), enableTopButtons(), pickScenario, SCENARIOS
 
 const SCENARIOS = []; // { name, fn: async(), weight }
 
@@ -135,6 +136,10 @@ function disableTopButtons(disabled = true) {
   const ids = ['btnSimu', 'btnFindPaths', 'btnExportODS', 'btnExportJSON', 'btnImportJSON', 'btnAddLink', 'btnRemoveLink', 'btnAddTarget', 'btnAddAttacker', 'btnAddVuln'];
   ids.forEach(id => { const b = $(id); if (b) b.disabled = disabled; });
 }
+// Simple symmetric helper to match main.js usage
+function enableTopButtons(enable = true) {
+  disableTopButtons(!enable);
+}
 
 /* ---------------- Scenario helpers (idempotent helpers that use DOM) ---------------- */
 /*
@@ -144,12 +149,11 @@ function disableTopButtons(disabled = true) {
   - btnFindPaths, results, target list render structure (for marking final via checkbox)
 */
 async function ensureTarget(name, finalFlag = false) {
-  const sTarget = $('linkSource'); // use presence check: we will prefer using selects (selEntriesAll also exists)
+  const sTarget = $('linkSource'); // presence check
   const targetSelect = $('linkDest') || $('selEntriesAll') || null;
   // fast path: if any target option matches, select it in main target select (selEntriesAll)
   const entriesSelect = $('selEntriesAll');
   if (entriesSelect && selectByText(entriesSelect, name)) {
-    // if finalFlag requested, mark final checkbox in target list
     if (finalFlag) await markTargetFinalByName(name);
     return true;
   }
@@ -160,13 +164,11 @@ async function ensureTarget(name, finalFlag = false) {
   await captionAt(tn, `Create target "${name}"`);
   await moveToEl(tn); await clickEl(tn); await typeInto(tn, name);
   if (finalFlag) {
-    // some UIs have a 'final' checkbox near creation; try to toggle if present
     const chk = $('targetFinalFlag');
     if (chk && !chk.checked) { await moveToEl(chk); await clickEl(chk); }
   }
   await moveToEl(addBtn); await clickEl(addBtn);
   if (finalFlag) {
-    // try to uncheck creation final checkbox to reset it (if present)
     const chk = $('targetFinalFlag'); if (chk && chk.checked) { await moveToEl(chk); await clickEl(chk); }
     await markTargetFinalByName(name);
   }
@@ -186,7 +188,6 @@ async function ensureAttacker(name) {
   await moveToEl(add); await clickEl(add);
   hideCaption();
   await wait(120);
-  // select it
   if ($('selAttacker')) selectByText($('selAttacker'), name);
   return true;
 }
@@ -194,7 +195,6 @@ async function ensureAttacker(name) {
 async function ensureVuln(name) {
   const s = $('vulnName'); const add = $('btnAddVuln');
   if (!s || !add) return false;
-  // quick check: if option exists in vuln select (vulnList), skip (we check by text presence)
   const exists = qsAll('#vulnList .item').some(div => div.textContent.trim().toLowerCase().includes(String(name).toLowerCase()));
   if (exists) return true;
   await captionAt(s, `Create vuln "${name}"`);
@@ -205,7 +205,6 @@ async function ensureVuln(name) {
 }
 
 async function markTargetFinalByName(name) {
-  // iterate targetList items and find checkbox next to matching label
   const items = qsAll('#targetList .item');
   for (const item of items) {
     if (item.textContent && item.textContent.trim().toLowerCase().includes(String(name).toLowerCase())) {
@@ -224,17 +223,12 @@ async function runScenarioObj(scenario) {
   if (!scenario) throw new Error('No scenario provided');
   disableTopButtons(true);
   try {
-    // soft visual focus
     const simBtn = $('btnSimu') || cls('button#simulateBtn');
     if (simBtn) { simBtn.disabled = true; simBtn.textContent = `Simulating: ${scenario.name}…`; }
-    // small caption
     if (simBtn) await captionAt(simBtn, `Scenario: ${scenario.name}`);
-    // run
     await scenario.fn();
   } catch (err) {
     console.error('[simulation] scenario failed', err);
-    // let caller know by rethrowing if needed
-    // rethrow? We handle silently but log.
   } finally {
     disableTopButtons(false);
     const simBtn = $('btnSimu') || cls('button#simulateBtn');
@@ -257,12 +251,25 @@ async function runScenario(name) {
 }
 
 /* ---------------- convenience exports ---------------- */
+
+// Provide a simple runner API that main.js expects
+async function runSimulation({ stateModule, renderCallback } = {}) {
+  // Optionally use stateModule/renderCallback if needed by custom scenarios
+  await runRandomScenario();
+  if (typeof renderCallback === 'function') {
+    try { renderCallback(); } catch (e) { console.error(e); }
+  }
+}
+
 export {
   addScenario as registerScenario,
+  runSimulation,
   runRandomScenario,
   runScenario,
   pickScenario,
-  SCENARIOS
+  SCENARIOS,
+  disableTopButtons,
+  enableTopButtons
 };
 
 /* ---------------- Example: register built-in simple scenarios (optional) ----------------
@@ -272,26 +279,21 @@ export {
 
 // Example scenario: Web -> DB -> Admin Console
 addScenario('Web → DB → Admin Console', async () => {
-  // clear note: many apps provide a clear/reset button; we assume 'clearAll' exists in your UI.
   const clear = $('clearAll');
   if (clear) { await moveToEl(clear); await clickEl(clear); }
 
-  // create targets
   await ensureTarget('Web Server DMZ', false);
   await ensureTarget('Database', false);
   await ensureTarget('Admin Console', true);
 
-  // create attacker
   await ensureAttacker('APT Operator');
 
-  // set entries
   const entriesSel = $('selEntriesAll');
   if (entriesSel) {
     selectByText($('selAttacker'), 'APT Operator');
     await moveToEl(entriesSel); multiSelectByTexts(entriesSel, ['Web Server DMZ']);
   }
 
-  // create links
   await moveToEl($('linkSource')); selectByText($('linkSource'), 'Web Server DMZ');
   await moveToEl($('linkDest')); multiSelectByTexts($('linkDest'), ['Database']);
   selectByText($('linkType'), 'direct');
@@ -301,7 +303,6 @@ addScenario('Web → DB → Admin Console', async () => {
   await moveToEl($('linkDest')); multiSelectByTexts($('linkDest'), ['Admin Console']);
   await moveToEl($('btnAddLink')); await clickEl($('btnAddLink'));
 
-  // run compute and open first diagram
   await moveToEl($('btnFindPaths')); await clickEl($('btnFindPaths'));
   const firstBtn = document.querySelector('#results .path button');
   if (firstBtn) { await moveToEl(firstBtn); await clickEl(firstBtn); }
@@ -319,7 +320,6 @@ addScenario('Phishing lateral to DC', async () => {
   selectByText($('selAttacker'), 'Phishing Campaign');
   multiSelectByTexts($('selEntriesAll'), ['Email Gateway']);
 
-  // links
   selectByText($('linkSource'), 'Email Gateway'); multiSelectByTexts($('linkDest'), ['User Workstation']); selectByText($('linkType'), 'direct'); await clickEl($('btnAddLink'));
   selectByText($('linkSource'), 'User Workstation'); multiSelectByTexts($('linkDest'), ['Domain Controller']); selectByText($('linkType'), 'lateral'); await clickEl($('btnAddLink'));
   selectByText($('linkSource'), 'Domain Controller'); multiSelectByTexts($('linkDest'), ['Admin Console']); selectByText($('linkType'), 'direct'); await clickEl($('btnAddLink'));
