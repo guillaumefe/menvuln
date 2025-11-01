@@ -211,6 +211,9 @@ async function init() {
 
   // Playback disabled by default until a simulation is started
   setPlaybackEnabled(false);
+  setPlayPauseVisual(false);
+  playback_renderCurrent();
+  playback_updateButtons();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -603,6 +606,8 @@ const playback = {
   baseDelayMs: 1200
 };
 
+window.__updatePlaybackButtons = () => playback_updateButtons();
+
 function playback_setDataset(results) {
   playback.dataset = Array.isArray(results) ? results.slice() : [];
   playback.index = 0;
@@ -832,6 +837,7 @@ function wirePlaybackControls() {
   if (speed) {
     playback_setSpeed(speed.value || 1);
     try { simSetSpeed(parseFloat(speed.value || '1') || 1); } catch {}
+    const lab = el('simSpeedValue'); if (lab) lab.textContent = `×${(+speed.value || 1).toFixed(1)}`;
     speed.addEventListener('input', () => {
       playback_setSpeed(speed.value);
       try { simSetSpeed(parseFloat(speed.value || '1') || 1); } catch {}
@@ -858,4 +864,8 @@ window.__envuln_boot = {
   computeAllPaths,
   playback_setExternalResults
 };
-init();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
