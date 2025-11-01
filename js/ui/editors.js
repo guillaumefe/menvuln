@@ -84,9 +84,9 @@ export function renderTargetEditor(targetId) {
     lab.style.gap = '8px';
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.checked = (target.vulns && target.vulns.has(v.id));
+    cb.checked = (target.vulns && target.vulns instanceof Set && target.vulns.has(v.id));
     cb.onchange = () => {
-      target.vulns = target.vulns || new Set();
+      target.vulns = target.vulns instanceof Set ? target.vulns : new Set();
       if (cb.checked) target.vulns.add(v.id);
       else target.vulns.delete(v.id);
       emitChange();
@@ -115,7 +115,7 @@ export function renderTargetEditor(targetId) {
       // attach existing vuln if present
       const existing = State.vulns.find(x => x.name.toLowerCase() === name.toLowerCase());
       if (existing) {
-        target.vulns = target.vulns || new Set();
+        target.vulns = target.vulns instanceof Set ? target.vulns : new Set();
         target.vulns.add(existing.id);
         inputNewV.value = '';
         emitChange();
@@ -127,7 +127,7 @@ export function renderTargetEditor(targetId) {
     const id = (Date.now().toString(36) + Math.random().toString(36).slice(2,6));
     State.vulns.push({ id, name });
     // attach to target
-    target.vulns = target.vulns || new Set();
+    target.vulns = target.vulns instanceof Set ? target.vulns : new Set();
     target.vulns.add(id);
     inputNewV.value = '';
     emitChange();
@@ -137,7 +137,7 @@ export function renderTargetEditor(targetId) {
   wrapper.appendChild(vulnBox);
   wrapper.appendChild(addVRow);
 
-  // Links quick view (read-only summary) — when user wants full link editor, the Links panel handles it
+  // Links quick view (read-only summary)
   const linksLabel = document.createElement('div');
   linksLabel.className = 'small';
   linksLabel.style.marginTop = '10px';
@@ -209,7 +209,7 @@ export function renderAttackerEditor(attackerId) {
     const o = document.createElement('option');
     o.value = t.id;
     o.textContent = t.name;
-    o.selected = attacker.entries && attacker.entries.has(t.id);
+    o.selected = attacker.entries && attacker.entries instanceof Set && attacker.entries.has(t.id);
     sel.appendChild(o);
   });
 
@@ -250,6 +250,29 @@ function escapeHtml(s) {
 }
 
 /**
+ * Re-render whichever details panel is relevant to the current selection.
+ * If a target is selected, render the target editor; otherwise, if an attacker is
+ * selected, render the attacker editor. If nothing is selected, clear the panel.
+ */
+export function hydrateDetailsPanel() {
+  const details = el('details');
+  if (!details) return;
+
+  const selTarget = el('selectTarget') || el('linkSource');
+  const selAttacker = el('selAttacker');
+
+  if (selTarget && selTarget.value) {
+    renderTargetEditor(selTarget.value);
+    return;
+  }
+  if (selAttacker && selAttacker.value) {
+    renderAttackerEditor(selAttacker.value);
+    return;
+  }
+  details.innerHTML = `<div class="small">Select an attacker or target to edit.</div>`;
+}
+
+/**
  * initEditors
  * - wires main high-level editor controls: when selectAttacker changes, render attacker editor;
  *   when selectTarget changes, render target editor.
@@ -287,14 +310,12 @@ export function initEditors() {
       if (State.attackers.some(a=>a.id===cur)) selAttacker.value = cur;
     }
     // re-fill central target selects used by UI
-    const selEntriesAll = el('selEntriesAll');
-    const selStartPool = el('selectStartPool');
     const selTargets = [ 'selectTarget', 'linkSource', 'linkDest', 'selEntriesAll', 'selectStartPool' ];
     selTargets.forEach(id => {
       const s = el(id);
       if (!s) return;
       const prev = s.value;
-      const selectedValues = [...s.selectedOptions || []].map(o => o.value);
+      const selectedValues = [...(s.selectedOptions || [])].map(o => o.value);
       s.innerHTML = '';
       State.targets.forEach(t => {
         const o = document.createElement('option'); o.value = t.id; o.textContent = t.name;
@@ -306,10 +327,7 @@ export function initEditors() {
     });
 
     // If there's a currently rendered details editor, re-render it to reflect vuls/finals
-    const curTargetSelector = el('selectTarget') || el('linkSource');
-    if (curTargetSelector && curTargetSelector.value) renderTargetEditor(curTargetSelector.value);
-    const curAttacker = el('selAttacker') && el('selAttacker').value;
-    if (curAttacker) renderAttackerEditor(curAttacker);
+    hydrateDetailsPanel();
   });
 
   // initial population (in case DOM ready)
