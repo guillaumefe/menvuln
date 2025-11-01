@@ -1,21 +1,20 @@
 // exportODS.js
 // Generate a Flat ODS (.fods) spreadsheet fully client-side
 
-import { nameOfTarget, collectAllPaths } from './paths.js';
+import { computeAllPaths, nameOfTarget } from './paths.js';
 
 /**
  * Export results into a Flat ODS file (.fods)
  * @param {Object} state Current state (from state.js)
- * @param {Object} options Optional: { results?, filter? }
+ * @param {Object} options Optional: { results?:Array, filter?:Function }
+ *   - results: precomputed paths array (same shape as computeAllPaths(...).paths)
+ *   - filter : (path) => boolean  (to include/exclude rows)
  */
 export function exportODS(state, options = {}) {
-  const results = (options.results && Array.isArray(options.results))
-    ? options.results
-    : collectAllPaths(state); // Pure call from paths.js
+  const pre = (options.results && Array.isArray(options.results)) ? options.results : null;
+  const results = pre ?? computeAllPaths(state).paths;
 
-  const filterFn = typeof options.filter === 'function'
-    ? options.filter
-    : () => true;
+  const filterFn = typeof options.filter === 'function' ? options.filter : () => true;
 
   const filtered = results.filter(filterFn);
   if (!filtered.length) {
@@ -28,18 +27,13 @@ export function exportODS(state, options = {}) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 
   // ===== HEADERS =====
-  const headPaths = [
-    '#','Attacker','Chain','Length','Final','Vulnerabilities (summary)'
-  ];
-  const headDetail = [
-    'Attacker','Step','Target','Final?','Vulnerabilities'
-  ];
-  const headGraph = [
-    'Type','Source','Destination'
-  ];
+  const headPaths  = ['#','Attacker','Chain','Length','Final','Vulnerabilities (summary)'];
+  const headDetail = ['Attacker','Step','Target','Final?','Vulnerabilities'];
+  const headGraph  = ['Type','Source','Destination'];
 
   // ===== ROW BUILDERS =====
   const rowsPaths = filtered.map((p, idx) => {
@@ -50,7 +44,7 @@ export function exportODS(state, options = {}) {
       const n = p.nodes[i]?.name || '?';
       return `[${n}: ${vs?.length ? vs.join(', ') : '—'}]`;
     }).join(' ');
-    return [ String(idx+1), p.attacker, chain, String(len), finale, vulnSummary ];
+    return [ String(idx+1), p.attackerName || p.attacker || '', chain, String(len), finale, vulnSummary ];
   });
 
   const rowsDetail = [];
@@ -58,7 +52,7 @@ export function exportODS(state, options = {}) {
     p.nodes.forEach((n, i) => {
       const vs = p.vulnsPerNode?.[i] || [];
       rowsDetail.push([
-        p.attacker,
+        p.attackerName || p.attacker || '',
         String(i + 1),
         n?.name || '',
         (i === p.nodes.length - 1) ? 'Yes' : 'No',
@@ -70,7 +64,8 @@ export function exportODS(state, options = {}) {
   const rowsGraph = [];
   const pushEdges = (type, map) => {
     for (const from in map) {
-      [...map[from]].forEach(to => {
+      const tos = Array.isArray(map[from]) ? map[from] : Array.from(map[from] || []);
+      tos.forEach(to => {
         rowsGraph.push([
           type,
           nameOfTarget(state, from),
@@ -79,37 +74,45 @@ export function exportODS(state, options = {}) {
       });
     }
   };
-  pushEdges('direct', state.edges.direct);
-  pushEdges('lateral', state.edges.lateral);
-  pushEdges('contains', state.edges.contains);
+  pushEdges('direct',   state.edges?.direct || {});
+  pushEdges('lateral',  state.edges?.lateral || {});
+  pushEdges('contains', state.edges?.contains || {});
 
   // ===== STYLE (readability) =====
   const styles = `
   <office:styles>
-
     <!-- Bold header -->
     <style:style style:name="hdr" style:family="table-cell">
       <style:text-properties fo:font-weight="bold"/>
       <style:table-cell-properties fo:background-color="#0b1730"
-        fo:padding="0.05cm"/>
+        fo:padding-left="0.1cm" fo:padding-right="0.1cm"
+        fo:padding-top="0.05cm" fo:padding-bottom="0.05cm"/>
       <style:paragraph-properties fo:margin="0cm"/>
     </style:style>
 
     <!-- Zebra row styles -->
     <style:style style:name="z1" style:family="table-cell">
-      <style:table-cell-properties fo:padding="0.05cm"/>
+      <style:table-cell-properties
+        fo:padding-left="0.1cm" fo:padding-right="0.1cm"
+        fo:padding-top="0.05cm" fo:padding-bottom="0.05cm"
+        style:vertical-align="top"/>
       <style:text-properties fo:font-size="10pt"/>
     </style:style>
 
     <style:style style:name="z2" style:family="table-cell">
-      <style:table-cell-properties fo:padding="0.05cm"
-        fo:background-color="#0f223f"/>
+      <style:table-cell-properties
+        fo:padding-left="0.1cm" fo:padding-right="0.1cm"
+        fo:padding-top="0.05cm" fo:padding-bottom="0.05cm"
+        fo:background-color="#0f223f" style:vertical-align="top"/>
       <style:text-properties fo:font-size="10pt"/>
     </style:style>
 
     <!-- Wrapped text -->
     <style:style style:name="wrap" style:family="table-cell">
-      <style:table-cell-properties fo:padding="0.05cm"/>
+      <style:table-cell-properties
+        fo:padding-left="0.1cm" fo:padding-right="0.1cm"
+        fo:padding-top="0.05cm" fo:padding-bottom="0.05cm"
+        style:vertical-align="top"/>
       <style:text-properties fo:font-size="10pt"/>
     </style:style>
 
@@ -117,19 +120,15 @@ export function exportODS(state, options = {}) {
     <style:style style:name="colNarrow" style:family="table-column">
       <style:table-column-properties style:column-width="1.2cm"/>
     </style:style>
-
     <style:style style:name="colMed" style:family="table-column">
       <style:table-column-properties style:column-width="4.2cm"/>
     </style:style>
-
     <style:style style:name="colWide" style:family="table-column">
       <style:table-column-properties style:column-width="9.5cm"/>
     </style:style>
-
     <style:style style:name="colXL" style:family="table-column">
       <style:table-column-properties style:column-width="14cm"/>
     </style:style>
-
   </office:styles>`;
 
   // ===== XML TABLE UTILS =====
@@ -154,21 +153,20 @@ export function exportODS(state, options = {}) {
       }).join('')}
     </table:table-row>`;
 
-  // Indices of wide columns to wrap
-  const wrapPaths = new Set([2, 5]); // Chain & Vulnerabilities summary
-  const wrapDetail = new Set([4]);   // Vulnerabilities
-  const wrapGraph = new Set([]);     // None
+  // Columns that should wrap
+  const wrapPaths  = new Set([2, 5]); // Chain, Vulnerabilities (summary)
+  const wrapDetail = new Set([4]);    // Vulnerabilities
+  const wrapGraph  = new Set([]);     // None
 
-  const headerPaths = mkHeader(headPaths);
-  const bodyPaths = rowsPaths.map((r,i)=> mkRow(r, i%2===1, wrapPaths)).join('');
-
+  // Build table bodies
+  const headerPaths  = mkHeader(headPaths);
+  const bodyPaths    = rowsPaths.map((r,i)=> mkRow(r, i%2===1, wrapPaths)).join('');
   const headerDetail = mkHeader(headDetail);
-  const bodyDetail = rowsDetail.map((r,i)=> mkRow(r, i%2===1, wrapDetail)).join('');
+  const bodyDetail   = rowsDetail.map((r,i)=> mkRow(r, i%2===1, wrapDetail)).join('');
+  const headerGraph  = mkHeader(headGraph);
+  const bodyGraph    = rowsGraph.map((r,i)=> mkRow(r, i%2===1, wrapGraph)).join('');
 
-  const headerGraph = mkHeader(headGraph);
-  const bodyGraph = rowsGraph.map((r,i)=> mkRow(r, i%2===1, wrapGraph)).join('');
-
-  // ===== Column layouts =====
+  // Column layouts
   const colsPaths = `
     <table:table-column table:style-name="colNarrow"/>
     <table:table-column table:style-name="colMed"/>
