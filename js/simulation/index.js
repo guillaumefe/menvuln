@@ -122,14 +122,25 @@ async function typeInto(input, text, perCharMs = 28) {
   }
 }
 
-function selectByText(selectEl, text) {
+async function selectByText(selectEl, text) {
   if (!selectEl) return;
   const target = String(text).toLowerCase();
-  for (const opt of selectEl.options) {
+  const options = [...selectEl.options];
+
+  for (const opt of options) {
     if (opt.textContent.toLowerCase() === target) {
+      // Open menu (real click)
+      await click(selectEl);
+      await g.wait(120);
+
+      // Click matching option (real selection)
       opt.selected = true;
-      selectEl.value = opt.value;
+      opt.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      await click(opt);
+
+      // Trigger change properly
       selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+      await g.wait(120);
       return;
     }
   }
