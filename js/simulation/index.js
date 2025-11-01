@@ -35,6 +35,7 @@ function timelineRecord(x, y) {
   const t = performance.now();
   TIMELINE.points.push({ x, y, t });
   TIMELINE.idx = TIMELINE.points.length - 1;
+  safeUpdateButtons();
 }
 function timelineGoto(index) {
   const i = Math.max(0, Math.min(TIMELINE.points.length - 1, index));
@@ -44,6 +45,7 @@ function timelineGoto(index) {
   c.style.left = `${p.x}px`;
   c.style.top  = `${p.y}px`;
   TIMELINE.idx = i;
+  safeUpdateButtons();
 }
 
 /* ---------------- Speed helpers ---------------- */
@@ -81,6 +83,7 @@ export function simStop() {
   const c = document.getElementById(CURSOR_ID);
   if (c) c.remove();
   timelineClear();
+  safeUpdateButtons();
 }
 export function simStep() {
   // allow one pause gate traversal
@@ -93,6 +96,7 @@ export function simStepBack(steps = 10) {
   if (!TIMELINE.points.length) return;
   const next = Math.max(0, TIMELINE.idx - Math.max(1, steps | 0));
   timelineGoto(next);
+  safeUpdateButtons();
 }
 export function simStepForward(steps = 10) {
   CTRL.paused = true;
@@ -100,6 +104,7 @@ export function simStepForward(steps = 10) {
   if (!TIMELINE.points.length) return;
   const next = Math.min(TIMELINE.points.length - 1, TIMELINE.idx + Math.max(1, steps | 0));
   timelineGoto(next);
+  safeUpdateButtons();
 }
 export function simCanStepBack() {
   return TIMELINE.idx > 0;
@@ -120,6 +125,9 @@ export function disableTopButtons(disabled = true) {
 }
 export function enableTopButtons() {
   disableTopButtons(false);
+}
+function safeUpdateButtons() {
+  try { window.__updatePlaybackButtons && window.__updatePlaybackButtons(); } catch {}
 }
 
 /* Sleep that honors pause/step/stop and speed */
