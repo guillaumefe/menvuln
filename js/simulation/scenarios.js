@@ -1,29 +1,27 @@
-/**
- * simulation/scenarios.js
- *
- * Purpose:
- *   Declare and register UI-driven demo scenarios that the simulation can pick at random.
- *
- * Assumptions:
- *   - simulation/index.js exports:
- *       - addScenario(name: string, fn: () => Promise<void>, weight?: number): void
- *       - g: an object with UI gesture helpers:
- *           g.el(id)
- *           g.wait(ms)
- *           g.moveToEl(node, offsetX?, offsetY?)
- *           g.click(node)
- *           g.typeInto(inputEl, text, perCharMs?)
- *           g.selectByText(selectEl, text)
- *           g.multiSelectByTexts(selectEl, textsArray)
- *           g.disableTopButtons(boolean)        // optional (no-op if missing)
- *           g.ensureInView(node, block?)
- *   - The main UI provides the following element IDs:
- *       attackerName, btnAddAttacker, selAttacker, selEntriesAll,
- *       targetName, btnAddTarget, targetList,
- *       linkSource, linkDest, linkType, btnAddLink,
- *       includeContains, btnFindPaths, results
- *   - The target “final” flag is a checkbox in each row inside #targetList .item
- */
+// js/simulation/scenarios.js
+//
+// Purpose:
+//   Declare and register UI-driven demo scenarios that the simulation can pick at random.
+//
+// Assumptions:
+//   - simulation/index.js exports:
+//       - addScenario(name: string, fn: () => Promise<void>, weight?: number): void
+//       - g: an object with UI gesture helpers:
+//           g.el(id)
+//           g.wait(ms)
+//           g.moveToEl(node, offsetX?, offsetY?)
+//           g.click(node)
+//           g.typeInto(inputEl, text, perCharMs?)
+//           g.selectByText(selectEl, text)
+//           g.multiSelectByTexts(selectEl, textsArray)
+//           g.disableTopButtons(boolean)
+//           g.ensureInView(node, block?)
+//
+//   - The main UI provides the following element IDs:
+//       attackerName, btnAddAttacker, selAttacker, selEntriesAll,
+//       targetName, btnAddTarget, targetList,
+//       linkSource, linkDest, linkType, btnAddLink,
+//       includeContains, includeLateral, btnFindPaths, results
 
 import { addScenario, g } from './index.js';
 
@@ -165,10 +163,11 @@ async function scenario_VPN_contains() {
   await setEntries('VPN Exploit', ['VPN Appliance']);
 
   // Links
-  await addLink('contains', 'VPN Appliance',     ['Internal Network']);
-  await addLink('direct',   'Internal Network',  ['Admin Console']);
+  await addLink('contains', 'Internal Network', ['Build Server']); // optional branch
+  await addLink('direct',   'VPN Appliance',    ['Internal Network']);
+  await addLink('direct',   'Internal Network', ['Admin Console']);
 
-  // Ensure "contains" is enabled (id: includeContains)
+  // Ensure "contains" is enabled
   const includeContains = g.el('includeContains');
   if (includeContains && !includeContains.checked) {
     await g.moveToEl(includeContains);
@@ -280,11 +279,9 @@ async function scenario_Loop_Prune() {
 
 /* ---------- Register scenarios (weighted random ready) ---------- */
 
-addScenario('Web → DB → Admin Console',         scenario_Web_DB_Console,     1);
-addScenario('Phishing lateral to DC',           scenario_Phishing_Lateral,    1);
-addScenario('VPN + contains pivot',             scenario_VPN_contains,        1);
-addScenario('Ransomware lateral spread',        scenario_Ransomware_Spread,   1);
+addScenario('Web → DB → Admin Console',         scenario_Web_DB_Console,      1);
+addScenario('Phishing lateral to DC',           scenario_Phishing_Lateral,     1);
+addScenario('VPN + contains pivot',             scenario_VPN_contains,         1);
+addScenario('Ransomware lateral spread',        scenario_Ransomware_Spread,    1);
 addScenario('Supply-chain via Web & Email',     scenario_SupplyChain_DualEntry,1);
-addScenario('Lateral loop + prune to final',    scenario_Loop_Prune,          1);
-
-// Copy/paste and add more scenarios above, then register here with addScenario(...).
+addScenario('Lateral loop + prune to final',    scenario_Loop_Prune,           1);
