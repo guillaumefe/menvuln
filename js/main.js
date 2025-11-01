@@ -1,5 +1,5 @@
 // js/main.js
-// Main UI and app logic. Wires controls from the document to the application state.
+// Main UI and app logic. Immediate persistence on all relevant selectors.
 
 import './simulation/scenarios.js';
 
@@ -71,6 +71,7 @@ async function init() {
   wireLinksUI();
   wireTopActions();
   wireSimulationButton();
+  wirePlaybackControls();
 }
 
 /* ---------------- Rendering ---------------- */
@@ -86,6 +87,8 @@ function renderAllUI() {
   hydrateVulnSelectors();
 
   renderLinksInspector();
+
+  playback_updateButtons();
 }
 
 function hydrateAttackerSelection(state = StateMod.State) {
@@ -151,49 +154,61 @@ function wireAttackerSelection() {
   });
 }
 
-/* ---------------- Entries ---------------- */
+/* ---------------- Entries (real-time + clear) ---------------- */
 function wireEntries() {
   const sel = el('selEntriesAll');
   const btnClear = el('btnClearEntries');
 
-  sel.addEventListener('change', () => {
-    const attId = el('selAttacker').value;
-    const ids = [...sel.selectedOptions].map(o => o.value);
-    StateMod.setAttackerEntries(attId, ids);
-    emitStateChanged();
-  });
+  if (sel) {
+    sel.addEventListener('change', () => {
+      const attId = el('selAttacker').value;
+      if (!attId) return;
+      const ids = [...sel.selectedOptions].map(o => o.value);
+      StateMod.setAttackerEntries(attId, ids);
+      emitStateChanged();
+    });
+  }
 
   if (btnClear) {
     btnClear.onclick = () => {
       const attId = el('selAttacker').value;
+      if (!attId) return;
+      // clear UI selection first so the user gets immediate feedback
+      [...sel.options].forEach(o => o.selected = false);
       StateMod.setAttackerEntries(attId, []);
       emitStateChanged();
     };
   }
 }
 
-/* ---------------- Exits ---------------- */
+/* ---------------- Exits (real-time + clear) ---------------- */
 function wireExits() {
   const sel = el('selExitsAll');
   const btnClear = el('btnClearExits');
 
-  sel.addEventListener('change', () => {
-    const attId = el('selAttacker').value;
-    const ids = [...sel.selectedOptions].map(o => o.value);
-    StateMod.setAttackerExits(attId, ids);
-    emitStateChanged();
-  });
+  if (sel) {
+    sel.addEventListener('change', () => {
+      const attId = el('selAttacker').value;
+      if (!attId) return;
+      const ids = [...sel.selectedOptions].map(o => o.value);
+      StateMod.setAttackerExits(attId, ids);
+      emitStateChanged();
+    });
+  }
 
   if (btnClear) {
     btnClear.onclick = () => {
       const attId = el('selAttacker').value;
+      if (!attId) return;
+      // clear UI selection first for immediate feedback
+      [...sel.options].forEach(o => o.selected = false);
       StateMod.setAttackerExits(attId, []);
       emitStateChanged();
     };
   }
 }
 
-/* ---------------- Vulnerabilities ---------------- */
+/* ---------------- Vulnerabilities (real-time + clear) ---------------- */
 function wireVulns() {
   const selTarget = el('selVulnElement');
   const selVulns = el('selVulnsForElement');
@@ -235,10 +250,11 @@ function renderResultsList(results) {
   if (!results.length) {
     cont.innerHTML = '<div class="small">No paths.</div>';
     if (svgSizeEl) svgSizeEl.textContent = '—';
+    playback_setDataset([]);
     return;
   }
 
-  results.forEach(p => {
+  results.forEach((p, idx) => {
     const row = document.createElement('div');
     row.className = 'path';
 
@@ -254,21 +270,13 @@ function renderResultsList(results) {
     const btn = document.createElement('button');
     btn.className = 'ghost';
     btn.textContent = 'Diagram';
-    btn.onclick = () => {
-      const svgStr = buildSVGForPath(p, StateMod.State);
-      el('diagramBox').innerHTML = svgStr;
-
-      const svg = el('diagramBox').querySelector('svg');
-      if (svg && svgSizeEl) {
-        const w = +svg.getAttribute('width') || svg.viewBox?.baseVal?.width || svg.getBoundingClientRect().width;
-        const h = +svg.getAttribute('height') || svg.viewBox?.baseVal?.height || svg.getBoundingClientRect().height;
-        svgSizeEl.textContent = `${Math.round(w)} × ${Math.round(h)} px`;
-      }
-    };
+    btn.onclick = () => playback_showIndex(idx, true);
 
     row.append(left, btn);
     cont.appendChild(row);
   });
+
+  playback_setDataset(results);
 }
 
 /* ---------------- Top actions ---------------- */
@@ -303,9 +311,13 @@ function wireTopActions() {
     lastResults = out.paths || [];
     lastMeta = { cycles: !!out.cycles, truncated: !!out.truncated };
     renderFiltered();
+    playback_resetToStart();
   };
 
-  if (chkOnlyVuln) chkOnlyVuln.addEventListener('change', renderFiltered);
+  if (chkOnlyVuln) chkOnlyVuln.addEventListener('change', () => {
+    renderFiltered();
+    playback_resetToStart();
+  });
 
   el('btnDownloadSVG').onclick = () => {
     const svg = el('diagramBox')?.querySelector('svg');
@@ -351,6 +363,7 @@ function wireTopActions() {
       StateMod.State.targets.forEach(t => StateMod.ensureEdgeMaps(t.id));
       renderAllUI();
       fileIn.value = '';
+      playback_resetToStart();
     };
   }
 }
@@ -370,10 +383,177 @@ function wireSimulationButton() {
       btn.disabled = false;
       enableTopButtons();
       renderAllUI();
+      playback_resetToStart();
     }
   };
 }
 
+/* ---------------- Playback controller ---------------- */
+
+const playback = {
+  dataset: [],
+  index: 0,
+  playing: false,
+  timer: null,
+  speed: 1.0,
+  baseDelayMs: 1200
+};
+
+function playback_setDataset(results) {
+  playback.dataset = Array.isArray(results) ? results.slice() : [];
+  if (playback.index >= playback.dataset.length) playback.index = 0;
+  playback_updateButtons();
+}
+
+function playback_current() {
+  return playback.dataset[playback.index] || null;
+}
+
+function playback_renderCurrent() {
+  const p = playback_current();
+  const box = el('diagramBox');
+  const svgSizeEl = el('svgSize');
+  if (!p || !box) {
+    if (box) box.innerHTML = '<div class="small">Select a path → Diagram</div>';
+    if (svgSizeEl) svgSizeEl.textContent = '—';
+    return;
+  }
+  const svgStr = buildSVGForPath(p, StateMod.State);
+  box.innerHTML = svgStr;
+  const svg = box.querySelector('svg');
+  if (svg && svgSizeEl) {
+    const w = +svg.getAttribute('width') || svg.viewBox?.baseVal?.width || svg.getBoundingClientRect().width;
+    const h = +svg.getAttribute('height') || svg.viewBox?.baseVal?.height || svg.getBoundingClientRect().height;
+    svgSizeEl.textContent = `${Math.round(w)} × ${Math.round(h)} px`;
+  }
+}
+
+function playback_updateButtons() {
+  const hasData = playback.dataset.length > 0;
+  const btnPP = el('btnPlayPause');
+  const btnStop = el('btnStop');
+  const btnRestart = el('btnRestart');
+  const btnStepBack = el('btnStepBack');
+  const btnStepForward = el('btnStepForward');
+
+  [btnPP, btnStop, btnRestart, btnStepBack, btnStepForward].forEach(b => {
+    if (b) b.disabled = !hasData;
+  });
+  if (btnPP) btnPP.textContent = playback.playing ? 'Pause' : 'Play';
+}
+
+function playback_tick() {
+  if (!playback.playing) return;
+  const delay = Math.max(200, Math.floor(playback.baseDelayMs / Math.max(0.2, playback.speed)));
+  clearTimeout(playback.timer);
+  playback.timer = setTimeout(() => {
+    playback_stepForward();
+    if (playback.playing) playback_tick();
+  }, delay);
+}
+
+function playback_play() {
+  if (!playback.dataset.length) return;
+  playback.playing = true;
+  playback_updateButtons();
+  playback_tick();
+}
+
+function playback_pause() {
+  playback.playing = false;
+  clearTimeout(playback.timer);
+  playback_updateButtons();
+}
+
+function playback_stop() {
+  playback_pause();
+  playback.index = 0;
+  playback_renderCurrent();
+}
+
+function playback_restart() {
+  playback.index = 0;
+  playback_renderCurrent();
+  if (playback.playing) {
+    playback_tick();
+  }
+}
+
+function playback_stepForward() {
+  if (!playback.dataset.length) return;
+  playback.index = (playback.index + 1) % playback.dataset.length;
+  playback_renderCurrent();
+}
+
+function playback_stepBack() {
+  if (!playback.dataset.length) return;
+  playback.index = (playback.index - 1 + playback.dataset.length) % playback.dataset.length;
+  playback_renderCurrent();
+}
+
+function playback_setSpeed(mult) {
+  playback.speed = Math.max(0.2, Math.min(3, +mult || 1));
+  const lab = el('simSpeedValue');
+  if (lab) lab.textContent = `×${playback.speed.toFixed(1)}`;
+  if (playback.playing) {
+    playback_tick();
+  }
+}
+
+function playback_resetToStart() {
+  playback_pause();
+  playback.index = 0;
+  playback_renderCurrent();
+}
+
+function playback_showIndex(idx, pauseAfter = false) {
+  if (!playback.dataset.length) return;
+  playback.index = Math.max(0, Math.min(playback.dataset.length - 1, idx));
+  playback_renderCurrent();
+  if (pauseAfter) playback_pause();
+}
+
+function wirePlaybackControls() {
+  const btnPP = el('btnPlayPause');
+  const btnStop = el('btnStop');
+  const btnRestart = el('btnRestart');
+  const btnStepBack = el('btnStepBack');
+  const btnStepForward = el('btnStepForward');
+  const speed = el('simSpeed');
+
+  if (btnPP) {
+    btnPP.onclick = () => {
+      if (playback.playing) playback_pause();
+      else {
+        if (!el('diagramBox')?.querySelector('svg')) playback_renderCurrent();
+        playback_play();
+      }
+    };
+  }
+  if (btnStop) btnStop.onclick = () => playback_stop();
+  if (btnRestart) btnRestart.onclick = () => playback_restart();
+  if (btnStepBack) btnStepBack.onclick = () => { playback_pause(); playback_stepBack(); };
+  if (btnStepForward) btnStepForward.onclick = () => { playback_pause(); playback_stepForward(); };
+
+  if (speed) {
+    playback_setSpeed(speed.value || 1);
+    speed.addEventListener('input', () => playback_setSpeed(speed.value));
+  }
+
+  playback_updateButtons();
+  playback_renderCurrent();
+}
+
+/* Convenience export if needed elsewhere */
+function playback_setExternalResults(results) {
+  playback_setDataset(results);
+  playback_resetToStart();
+}
+
 /* ---------------- Boot ---------------- */
-window.__envuln_boot = { State: StateMod.State, computeAllPaths };
+window.__envuln_boot = {
+  State: StateMod.State,
+  computeAllPaths,
+  playback_setExternalResults
+};
 init();
