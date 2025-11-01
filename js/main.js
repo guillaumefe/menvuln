@@ -95,43 +95,44 @@ function bridgeSimulationPlayback() {
     speed.addEventListener('input', applySpeed);
   }
 
-// Play / Pause
-if (btnPP) {
-  btnPP.addEventListener('click', async () => {
-    if (!simIsRunning()) {
-      // starting a run → enable Playback
+  // Play / Pause
+  if (btnPP) {
+    btnPP.addEventListener('click', async () => {
+      if (!simIsRunning()) {
+        // starting a run → enable Playback
+        setPlaybackEnabled(true);
+        simPlay();
+        await runSimulation({ renderCallback: () => renderAllUI() });
+        // run finished → disable Playback again
+        setPlaybackEnabled(false);
+      } else {
+        simToggle();
+      }
+    });
+  }
+  
+  // Stop
+  if (btnStop) {
+    btnStop.addEventListener('click', () => {
+      // request stop and immediately wipe artifacts
+      resetForFreshSimulation();
+      // immediately grey out / disable
+      setPlaybackEnabled(false);
+    });
+  }
+  
+  // Restart
+  if (btnRestart) {
+    btnRestart.addEventListener('click', async () => {
+      // wipe everything created so far, then start a fresh run
+      resetForFreshSimulation();
       setPlaybackEnabled(true);
       simPlay();
       await runSimulation({ renderCallback: () => renderAllUI() });
-      // run finished → disable Playback again
+      // when scenarios complete naturally, disable controls again
       setPlaybackEnabled(false);
-    } else {
-      simToggle();
-    }
-  });
-}
-
-// Stop
-if (btnStop) {
-  btnStop.addEventListener('click', () => {
-    if (simIsRunning()) simStop();
-    // immediately grey out / disable
-    setPlaybackEnabled(false);
-  });
-}
-
-// Restart
-if (btnRestart) {
-  btnRestart.addEventListener('click', async () => {
-    if (simIsRunning()) simStop();
-    setTimeout(async () => {
-      setPlaybackEnabled(true); // enable at start
-      simPlay();
-      await runSimulation({ renderCallback: () => renderAllUI() });
-      setPlaybackEnabled(false); // disable when finished
-    }, 60);
-  });
-}
+    });
+  }
 
   // step back/forward: move the cursor a few timeline ticks and remain paused
   if (btnStepBack) {
@@ -567,6 +568,37 @@ function wireSimulationButton() {
       playback_resetToStart?.();
     }
   };
+}
+
+// Fully clear runtime state, UI, storage, and the simulated cursor
+function resetForFreshSimulation() {
+  // Stop any running loop and remove the fake cursor if present
+  try { if (typeof simStop === 'function') simStop(); } catch {}
+  const cur = document.getElementById('__sim_cursor');
+  if (cur) cur.remove();
+
+  // Wipe in-memory state
+  StateMod.State.attackers = [];
+  StateMod.State.targets   = [];
+  StateMod.State.vulns     = [];
+  StateMod.State.edges     = { direct: {}, lateral: {}, contains: {} };
+
+  // Clear cached results/meta
+  lastResults = [];
+  lastMeta = { cycles: false, truncated: false };
+
+  // Reset UI surfaces
+  const resultsEl = el('results');    if (resultsEl) resultsEl.innerHTML = '';
+  const diagram   = el('diagramBox'); if (diagram)   diagram.innerHTML = '<div class="small">Select a path → Diagram</div>';
+  const statusEl  = el('status');     if (statusEl)  statusEl.textContent = '—';
+  const svgSizeEl = el('svgSize');    if (svgSizeEl) svgSizeEl.textContent = '—';
+
+  // Clear persisted storage so the next run starts clean
+  try { localStorage.removeItem('envuln-lite-store'); } catch {}
+
+  // Re-render and reset playback index
+  renderAllUI();
+  if (typeof playback_resetToStart === 'function') playback_resetToStart();
 }
 
 /* -------------------------------------------------------------------------- */
