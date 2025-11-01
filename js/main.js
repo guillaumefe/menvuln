@@ -1,16 +1,5 @@
 // js/main.js
 // Entry point for the ENVULN client-side modular app.
-//
-// Expected module exports (adjust names if your modules differ):
-// - ./helpers.js:        { el, uid, norm, clamp }
-// - ./state.js:          { State, createAttacker, createTarget, createVuln, removeAttacker, removeTarget, removeVuln, setAttackerEntries, toggleTargetFinal, addEdge, removeEdge, ensureEdgeMaps }
-// - ./storage.js:        { saveToLocal, loadFromLocal }
-// - ./ui/lists.js:      { renderAttackers, renderTargets, renderVulns, populateSelectors, hydrateEntriesSelect, renderLinksInspector, renderDetailsPanel }
-// - ./paths.js:          { computeAllPaths } // pure function, returns standardized results
-// - ./diagram.js:        { buildSVGForPath } // returns SVG string
-// - ./exportODS.js:      { exportODS } // takes results or uses globally accessible compute
-// - ./simulation/index.js:{ runSimulation, registerScenario, disableTopButtons, enableTopButtons }
-// Adjust imports if you used different filenames / function names.
 
 import { el, norm } from './helpers.js';
 import * as StateMod from './state.js';
@@ -22,7 +11,7 @@ import {
   populateSelectors,
   hydrateEntriesSelect,
   renderLinksInspector,
-  renderDetailsPanel
+  renderDetailsPanel,   // <- must exist as a named export in ./ui/lists.js
 } from './ui/lists.js';
 import { computeAllPaths } from './paths.js';
 import { buildSVGForPath } from './diagram.js';
@@ -30,7 +19,7 @@ import { exportODS } from './exportODS.js';
 import { runSimulation, registerScenario, disableTopButtons, enableTopButtons } from './simulation/index.js';
 
 /* ---------- Local runtime helpers ---------- */
-let lastResults = [];   // raw (unfiltered) results from computeAllPaths()
+let lastResults = [];   // raw results from computeAllPaths()
 let lastMeta = { cycles: false };
 let lastDiagramSVG = null;
 
@@ -41,13 +30,9 @@ async function init(){
   // load persisted state (if any)
   const loaded = loadFromLocal();
   if (loaded) {
-    // hydrate state module
-    // NOTE: loadFromLocal should return a plain serial object. state.js should provide a hydrate function,
-    // but if not, we do a minimal hydration here.
     if (typeof StateMod.hydrate === 'function') {
       StateMod.hydrate(loaded);
     } else {
-      // naive hydration (assumes same shape)
       StateMod.State.version = loaded.version || StateMod.State.version;
       StateMod.State.vulns = loaded.vulns || [];
       StateMod.State.targets = (loaded.targets || []).map(t => ({ id: t.id, name: t.name, vulns: new Set(t.vulns || []), final: !!t.final }));
@@ -85,7 +70,7 @@ function renderAllUI(){
   populateSelectors(StateMod.State);
   hydrateEntriesSelect();
   renderLinksInspector();
-  renderDetailsPanel();
+  renderDetailsPanel(); // <- calls the wrapper which invokes editors.hydrateDetailsPanel()
 }
 
 /* ---------- compute / render results ---------- */
@@ -96,7 +81,6 @@ function filterOnlyVuln(results){
 }
 
 function renderResultsView(results, meta){
-  // results is already filtered or raw depending on caller
   const container = el('results');
   container.innerHTML = '';
   if(!results.length){
@@ -104,7 +88,7 @@ function renderResultsView(results, meta){
     renderStatus('0 paths');
     return;
   }
-  results.forEach((p, idx) => {
+  results.forEach((p) => {
     const row = document.createElement('div');
     row.className = 'path';
     const left = document.createElement('div'); left.className = 'left';
@@ -119,7 +103,6 @@ function renderResultsView(results, meta){
       lastDiagramSVG = buildSVGForPath(p, StateMod.State);
       const diagramBox = el('diagramBox');
       if (diagramBox) diagramBox.innerHTML = lastDiagramSVG;
-      // update svg size
       const svgNode = diagramBox ? diagramBox.querySelector('svg') : null;
       if(svgNode && el('svgSize')){
         const w = svgNode.getAttribute('width') || svgNode.viewBox?.baseVal?.width || '?';
@@ -144,12 +127,10 @@ async function onComputePaths(){
     const maxPaths = Math.max(100, parseInt(el('maxPaths')?.value || '2000', 10));
 
     const opts = { includeLateral, includeContains, maxPaths };
-
-    // computeAllPaths is expected to return [{ attacker, attackerId, nodes: [targetObjs], vulnsPerNode: [[vulnNames]] }, ...]
     const results = computeAllPaths(StateMod.State, opts);
 
     lastResults = results;
-    lastMeta = { cycles: false }; // if computeAllPaths returns cycles flag, you can set it here
+    lastMeta = { cycles: false };
 
     const toDisplay = filterOnlyVuln(lastResults);
     renderResultsView(toDisplay, lastMeta);
@@ -162,8 +143,18 @@ async function onComputePaths(){
 
 /* ---------- export / import ---------- */
 function onExportODS(){
-  // export honors the UI filter checkbox (if desired)
-  const resultsToExport = filterOnlyVuln(lastResults.length ? lastResults : computeAllPaths(StateMod.State, { includeLateral: !!el('includeLateral')?.checked, includeContains: !!el('includeContains')?.checked, maxPaths: Math.max(100, parseInt(el('maxPaths')?.value || '2000',10)) }));
+  const resultsToExport = filterOnlyVuln(
+    lastResults.length
+      ? lastResults
+      : computeAllPaths(
+          StateMod.State,
+          {
+            includeLateral: !!el('includeLateral')?.checked,
+            includeContains: !!el('includeContains')?.checked,
+            maxPaths: Math.max(100, parseInt(el('maxPaths')?.value || '2000',10))
+          }
+        )
+  );
   exportODS(resultsToExport, { state: StateMod.State });
 }
 
@@ -176,7 +167,6 @@ function onImportJSON(file){
       if(typeof StateMod.hydrate === 'function'){
         StateMod.hydrate(obj);
       } else {
-        // minimal apply: user should implement hydrate for robustness
         console.warn('hydrate not implemented in state module; manual import may be partial.');
       }
       saveToLocal(StateMod.State);
@@ -256,7 +246,7 @@ function wireUI(){
   const selAttacker = el('selAttacker');
   const selEntriesAll = el('selEntriesAll');
   if(selAttacker && selEntriesAll){
-    selAttacker.onchange = () => hydrateEntriesSelect(); // UI helper populates the entries selection
+    selAttacker.onchange = () => hydrateEntriesSelect(); 
     selEntriesAll.onchange = () => {
       const aid = selAttacker.value;
       if(!aid) return;
@@ -293,7 +283,6 @@ function wireUI(){
     };
   }
 
-  // link inspector
   const linkSource = el('linkSource');
   if(linkSource) linkSource.onchange = () => renderLinksInspector();
 
@@ -302,7 +291,7 @@ function wireUI(){
   if(btnFindPaths) btnFindPaths.onclick = onComputePaths;
 
   // export / import
-  const btnExportODS = el('btnExportODS') || el('btnExportExcel'); // accept both names
+  const btnExportODS = el('btnExportODS') || el('btnExportExcel');
   if(btnExportODS) btnExportODS.onclick = onExportODS;
   const btnImportJSON = el('btnImportJSON');
   if(btnImportJSON) btnImportJSON.onclick = () => el('fileIn')?.click();
