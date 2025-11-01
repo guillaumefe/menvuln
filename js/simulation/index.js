@@ -1,188 +1,190 @@
-// js/simulation/index.js
-// Simulation core with “mouse-like” gestures + resilient scenario loading.
+/* =========================================================
+   simulation/index.js
+   UI-driven simulation with a fake cursor (mouse gestures)
+   ========================================================= */
 
-const SCENARIOS = []; // [{ name, fn, weight }]
+const SCENARIOS = [];
 
-// ---------------- Registry ----------------
-function addScenario(name, fn, weight = 1) {
-  SCENARIOS.push({ name, fn, weight });
+/* ---------------- Registry ---------------- */
+export function registerScenario(name, fn, weight = 1) {
+  SCENARIOS.push({ name, fn, weight: Math.max(0, +weight || 1) });
 }
-const registerScenario = addScenario;
-
 function pickScenario() {
-  const total = SCENARIOS.reduce((s, x) => s + (x.weight ?? 1), 0);
+  const total = SCENARIOS.reduce((s, x) => s + x.weight, 0);
   if (!total) return null;
   let r = Math.random() * total;
   for (const s of SCENARIOS) {
-    r -= (s.weight ?? 1);
+    r -= s.weight;
     if (r <= 0) return s;
   }
-  return SCENARIOS.at(-1) || null;
+  return SCENARIOS[SCENARIOS.length - 1] || null;
 }
 
-// ---------------- Mouse-like helpers ----------------
+/* ---------------- DOM helpers ---------------- */
 const $ = (id) => document.getElementById(id);
-const wait = (ms) => new Promise(res => setTimeout(res, ms));
-function ensureInView(node, block = 'center') {
-  try { node?.scrollIntoView({ behavior: 'smooth', block }); } catch {}
-}
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-function _mouse(el, type, opts = {}) {
-  if (!el) return;
-  const r = el.getBoundingClientRect();
-  const ev = new MouseEvent(type, {
-    bubbles: true,
-    cancelable: true,
-    clientX: r.left + (opts.offX ?? 8),
-    clientY: r.top + (opts.offY ?? 8)
+export function disableTopButtons(disabled = true) {
+  ['btnSimu', 'btnFindPaths', 'btnExportODS', 'btnImportJSON', 'btnExportJSON']
+    .forEach(id => { const b = $(id); if (b) b.disabled = disabled; });
+}
+export function enableTopButtons() { disableTopButtons(false); }
+
+/* =========================================================
+   Gesture engine: move fake cursor, click, type, select
+   ========================================================= */
+
+const CURSOR_ID = '__sim_cursor';
+
+function ensureCursor() {
+  let c = document.getElementById(CURSOR_ID);
+  if (c) return c;
+  c = document.createElement('div');
+  c.id = CURSOR_ID;
+  Object.assign(c.style, {
+    position: 'fixed',
+    zIndex: 999999,
+    width: '12px',
+    height: '12px',
+    borderRadius: '50%',
+    background: 'rgba(59,130,246,.9)',
+    boxShadow: '0 0 0 6px rgba(59,130,246,.18)',
+    pointerEvents: 'none',
+    transform: 'translate(-50%, -50%)',
+    transition: 'transform 80ms linear',
   });
-  el.dispatchEvent(ev);
+  document.body.appendChild(c);
+  return c;
 }
 
-async function moveToEl(el, offX = 8, offY = 8) {
-  if (!el) return;
-  ensureInView(el);
-  await wait(120);
-  _mouse(el, 'mousemove', { offX, offY });
-  await wait(60);
+async function moveToPoint(x, y, msPer100px = 120) {
+  const cur = ensureCursor();
+  const rectNow = cur.getBoundingClientRect();
+  const from = { x: rectNow.left + 6, y: rectNow.top + 6 };
+  const dx = x - from.x, dy = y - from.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const steps = Math.max(10, Math.floor(dist / 10));
+  const dur = Math.max(80, Math.floor((dist / 100) * msPer100px));
+  const dt = dur / steps;
+
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const nx = from.x + dx * t;
+    const ny = from.y + dy * t;
+    cur.style.left = `${nx}px`;
+    cur.style.top  = `${ny}px`;
+    await sleep(dt);
+  }
 }
 
-async function click(el) {
-  if (!el) return;
-  await moveToEl(el);
-  el.focus?.();
-  _mouse(el, 'mousedown');
-  _mouse(el, 'mouseup');
-  el.click?.();
-  await wait(80);
+async function moveToEl(node, offX = 6, offY = 6) {
+  if (!node) return;
+  node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  await sleep(150);
+  const r = node.getBoundingClientRect();
+  await moveToPoint(r.left + Math.min(r.width - 2, offX), r.top + Math.min(r.height - 2, offY));
 }
 
-async function typeInto(input, text, perCharMs = 12) {
+function fireMouseSequence(node) {
+  const r = node.getBoundingClientRect();
+  const centerX = r.left + r.width / 2;
+  const centerY = r.top + r.height / 2;
+  const evts = ['mousedown', 'mouseup', 'click'];
+  for (const type of evts) {
+    node.dispatchEvent(new MouseEvent(type, {
+      bubbles: true, cancelable: true, view: window,
+      clientX: centerX, clientY: centerY, button: 0
+    }));
+  }
+}
+
+async function click(node, offX = 6, offY = 6) {
+  if (!node) return;
+  await moveToEl(node, offX, offY);
+  fireMouseSequence(node);
+  await sleep(80);
+}
+
+async function typeInto(input, text, perCharMs = 28) {
   if (!input) return;
-  await moveToEl(input, 10, 10);
+  await click(input);
   input.focus();
   input.value = '';
   input.dispatchEvent(new Event('input', { bubbles: true }));
   for (const ch of String(text)) {
     input.value += ch;
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    await wait(perCharMs);
+    await sleep(perCharMs);
   }
 }
 
-function selectByText(sel, text) {
-  if (!sel) return;
-  const target = String(text).toLowerCase();
-  for (const o of sel.options) {
-    if (String(o.textContent || '').toLowerCase() === target) {
-      sel.value = o.value;
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-      break;
+function selectByText(selectEl, text) {
+  if (!selectEl) return;
+  const s = String(text).toLowerCase();
+  for (const opt of selectEl.options) {
+    if (opt.textContent.toLowerCase() === s) {
+      selectEl.value = opt.value;
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
     }
   }
 }
 
-function multiSelectByTexts(sel, texts) {
-  if (!sel) return;
-  const want = new Set(texts.map(t => String(t).toLowerCase()));
-  for (const o of sel.options) {
-    o.selected = want.has(String(o.textContent || '').toLowerCase());
+function multiSelectByTexts(selectEl, labels = []) {
+  if (!selectEl) return;
+  const wanted = new Set(labels.map(x => String(x).toLowerCase()));
+  for (const opt of selectEl.options) {
+    const on = wanted.has(opt.textContent.toLowerCase());
+    opt.selected = on;
   }
-  sel.dispatchEvent(new Event('change', { bubbles: true }));
+  selectEl.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-// ---------------- Top buttons ----------------
-function disableTopButtons(disabled = true) {
-  ['btnSimu', 'btnFindPaths', 'btnExportODS', 'btnImportJSON', 'btnExportJSON']
-    .forEach(id => { const b = $(id); if (b) b.disabled = disabled; });
-}
-function enableTopButtons() { disableTopButtons(false); }
-
-// ---------------- Lazy scenario loading ----------------
-let triedDynamicLoad = false;
-async function ensureScenariosLoadedOnce() {
-  if (SCENARIOS.length > 0) return;
-
-  // If main.js didn’t side-effect import scenarios.js, try dynamic import now.
-  if (!triedDynamicLoad) {
-    triedDynamicLoad = true;
-    try {
-      // Use URL to be safe in ESM.
-      await import(new URL('./scenarios.js', import.meta.url));
-    } catch (e) {
-      console.warn('[simulation] dynamic scenarios load failed:', e);
-    }
+/* expose the gesture helpers (used by scenarios) */
+export const g = {
+  el: (id) => document.getElementById(id),
+  wait: sleep,
+  moveToEl,
+  click,
+  typeInto,
+  selectByText,
+  multiSelectByTexts,
+  disableTopButtons,
+  ensureInView: (node, block = 'center') => {
+    try { node?.scrollIntoView({ block, behavior: 'smooth' }); } catch {}
   }
+};
 
-  // If still nothing, install a minimal built-in fallback.
-  if (SCENARIOS.length === 0) {
-    console.warn('[simulation] no scenarios registered; installing fallback scenario.');
-    addScenario('Fallback Demo', async ({ g }) => {
-      // Create a minimal chain via the real UI.
-      await typeInto(g.el('targetName'), 'Host A');
-      await g.click(g.el('btnAddTarget'));
-
-      await typeInto(g.el('targetName'), 'Host B');
-      await g.click(g.el('btnAddTarget'));
-
-      // mark Host B as final (via left list row)
-      const rows = document.querySelectorAll('#targetList .item');
-      for (const r of rows) {
-        if ((r.textContent || '').includes('Host B')) {
-          const cb = r.querySelector('input[type="checkbox"]');
-          if (cb) { await moveToEl(cb); await click(cb); }
-          break;
-        }
-      }
-
-      // attacker
-      await typeInto(g.el('attackerName'), 'Demo Attacker');
-      await g.click(g.el('btnAddAttacker'));
-
-      // select attacker + entries
-      g.selectByText(g.el('selAttacker'), 'Demo Attacker');
-      g.multiSelectByTexts(g.el('selEntriesAll'), ['Host A']);
-      await g.wait(120);
-
-      // link A -> B (direct)
-      g.selectByText(g.el('linkSource'), 'Host A');
-      g.multiSelectByTexts(g.el('linkDest'), ['Host B']);
-      g.selectByText(g.el('linkType'), 'direct');
-      await g.click(g.el('btnAddLink'));
-
-      // compute
-      await g.moveToEl(g.el('btnFindPaths'));
-      await g.click(g.el('btnFindPaths'));
-    }, 1);
-  }
-}
-
-// ---------------- Runner ----------------
-const g = { el: $, wait, moveToEl, click, typeInto, selectByText, multiSelectByTexts, ensureInView, disableTopButtons };
+/* =========================================================
+   Scenario runners
+   ========================================================= */
 
 async function runScenarioObject(sc) {
   disableTopButtons(true);
-  try { await sc.fn({ g }); }
-  catch (e) { console.error('[simulation] scenario failed:', e); }
-  finally { disableTopButtons(false); }
+  try {
+    await sc.fn(g);
+  } catch (e) {
+    console.error('[simulation] scenario error:', e);
+    alert(e?.message || 'Simulation error');
+  } finally {
+    disableTopButtons(false);
+  }
 }
 
-async function runRandomScenario() {
-  await ensureScenariosLoadedOnce();
+export async function runRandomScenario() {
   const sc = pickScenario();
   if (!sc) { alert('No simulation scenarios registered.'); return; }
-  await runScenarioObject(sc);
+  return runScenarioObject(sc);
 }
 
-async function runScenario(name) {
-  await ensureScenariosLoadedOnce();
+export async function runScenario(name) {
   const sc = SCENARIOS.find(s => s.name === name);
-  if (!sc) throw new Error(`Scenario not found: ${name}`);
-  await runScenarioObject(sc);
+  if (!sc) { alert(`Scenario not found: ${name}`); return; }
+  return runScenarioObject(sc);
 }
 
-async function runSimulation(opts = {}) {
-  if (opts.scenarioName) await runScenario(opts.scenarioName);
+export async function runSimulation(opts = {}) {
+  if (opts?.scenarioName) await runScenario(opts.scenarioName);
   else await runRandomScenario();
 
   if (typeof opts.renderCallback === 'function') {
@@ -190,24 +192,14 @@ async function runSimulation(opts = {}) {
   }
 }
 
-// ---------------- Exports ----------------
-export {
-  addScenario,
+/* default export for convenience */
+export default {
   registerScenario,
   runSimulation,
   runRandomScenario,
   runScenario,
-  pickScenario,
-  SCENARIOS,
   disableTopButtons,
   enableTopButtons,
-  g
-};
-
-export default {
-  registerScenario: addScenario,
-  runSimulation,
-  disableTopButtons,
-  enableTopButtons,
-  g
+  g,
+  SCENARIOS
 };
