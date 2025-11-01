@@ -10,10 +10,10 @@
 <body>
 <div class="wrap">
 
-  <!-- LEFT: Add + Lists (edit/delete) -->
+  <!-- LEFT PANEL — Add + Manage Entities -->
   <div class="panel" id="panelEntities">
-    <h3>Ajout & Éléments</h3>
-    <div class="small">Crée les entités ici. Les listes ci-dessous permettent de renommer ou supprimer.</div>
+    <h3>Ajout & Gestion</h3>
+    <div class="small">Ajouter, renommer ou supprimer les entités ici.</div>
 
     <!-- Add forms -->
     <div class="form-block">
@@ -42,20 +42,9 @@
 
     <hr>
 
-    <!-- Lists with inline edit/delete -->
+    <!-- Entity Lists -->
     <h3>Attaquants</h3>
-    <div id="attackerList" class="list">
-      <!--
-        Chaque item injecté par JS doit ressembler à :
-        <div class="list-item">
-          <span class="item-name">Attacker A</span>
-          <div class="item-actions">
-            <button class="btn-rename" data-type="attacker" data-id="...">Rename</button>
-            <button class="btn-delete ghost" data-type="attacker" data-id="...">Delete</button>
-          </div>
-        </div>
-      -->
-    </div>
+    <div id="attackerList" class="list"></div>
 
     <h3>Cibles</h3>
     <div id="targetList" class="list"></div>
@@ -64,9 +53,9 @@
     <div id="vulnList" class="list"></div>
   </div>
 
-  <!-- CENTER: Compute, associations, links, results -->
+  <!-- CENTER PANEL — Associations / Compute / Results -->
   <div class="panel" id="panelAssociations">
-    <h3>Configuration & Calcul</h3>
+    <h3>Configuration & Exploration</h3>
 
     <div class="row">
       <div class="col">
@@ -87,8 +76,7 @@
 
     <hr>
 
-    <!-- IMPORTANT: le bloc "Détails / Édition" + "Entry points" + "Exit points" A ÉTÉ SUPPRIMÉ -->
-
+    <!-- Vulnerability association -->
     <h3>Association des vulnérabilités</h3>
     <div class="row">
       <div class="col">
@@ -104,11 +92,12 @@
     <div class="row">
       <button id="btnAttachVulns">Associer</button>
       <button id="btnDetachVulns" class="ghost">Dissocier</button>
-      <span class="small" id="assocStatus">Choisissez une cible et des vulnérabilités.</span>
+      <span class="small" id="assocStatus">Choisir une cible et des vulnérabilités.</span>
     </div>
 
     <hr>
 
+    <!-- Links -->
     <h3>Liens entre cibles</h3>
     <div class="row">
       <select id="linkSource"></select>
@@ -131,6 +120,7 @@
 
     <hr>
 
+    <!-- Actions -->
     <div class="row top-actions">
       <button id="btnFindPaths">Calculer chemins</button>
       <button id="btnExportODS" class="ghost">Export ODS</button>
@@ -143,6 +133,7 @@
 
     <hr>
 
+    <!-- Results -->
     <h3 style="display:flex;align-items:center;gap:10px">
       Résultats
       <label class="small" style="display:inline-flex;align-items:center;gap:6px">
@@ -154,7 +145,7 @@
     <div id="results" class="path-list"></div>
   </div>
 
-  <!-- RIGHT: Tutorial + Diagram -->
+  <!-- RIGHT PANEL — Tutorial + Diagram -->
   <div class="panel" id="panelDetailsRight">
     <h3>Tutoriel</h3>
     <ol id="tutorial" class="small"></ol>
@@ -162,7 +153,7 @@
     <hr>
 
     <h3>Diagramme d’attaque</h3>
-    <div id="diagramBox" class="uml"><div class="small">Choisis un chemin → Diagramme</div></div>
+    <div id="diagramBox" class="uml"><div class="small">Sélectionne un chemin → Diagramme</div></div>
 
     <div class="row">
       <button id="btnDownloadSVG" class="ghost">Télécharger SVG</button>
