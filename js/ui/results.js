@@ -1,11 +1,12 @@
 // js/ui/results.js
 // Module responsible for rendering computed attack paths (results panel).
-// Exports: initResultsPanel, renderResultsFromCompute, getLastResults
-// Dependencies: ../helpers.js (el, esc), ../paths.js (computeAllPaths), ../diagram.js (buildSVGForPath)
+// Exports: initResultsPanel, renderResults, computeAndRenderAll, renderDiagramForPath, getLastResults, getLastMeta
+// Dependencies: ../helpers.js (el, esc), ../paths.js (computeAllPaths), ../diagram.js (buildSVGForPath), ../state.js (State)
 
 import { el, esc } from '../helpers.js';
 import { computeAllPaths } from '../paths.js';
 import { buildSVGForPath } from '../diagram.js';
+import { State } from '../state.js';
 import { exportODS } from '../exportODS.js'; // optional: if you implemented exporter
 
 // Internal cache
@@ -21,10 +22,13 @@ let svgSizeEl = null;
 let downloadSvgBtn = null;
 
 /* ---------- UTIL ---------- */
+// By design, we ignore the *first* node of the path for the vuln-everywhere filter,
+// because entry nodes often don't carry a vulnerability in the model.
 const hasVulnsEverywhere = (path) => {
-  // path.vulnsPerNode is expected to be Array<Array<string>>
   if (!Array.isArray(path.vulnsPerNode)) return false;
-  return path.vulnsPerNode.every(vs => Array.isArray(vs) && vs.length > 0);
+  const slice = path.vulnsPerNode.slice(1);
+  if (!slice.length) return false;
+  return slice.every(vs => Array.isArray(vs) && vs.length > 0);
 };
 
 const getDisplayResults = () => {
@@ -57,7 +61,10 @@ function renderResults(resultsArray, meta = {}) {
   if (!toDisplay.length) {
     const empty = document.createElement('div');
     empty.className = 'small';
-    empty.textContent = 'No paths (check entry points, finals and link types).';
+    const filtered = !!(chkOnlyVuln && chkOnlyVuln.checked);
+    empty.textContent = filtered
+      ? 'No paths match the “only vulnerable” filter.'
+      : 'No paths (check entry points, finals and link types).';
     resultsBox.appendChild(empty);
     renderSummary(0, meta);
     return;
@@ -147,7 +154,8 @@ function renderResults(resultsArray, meta = {}) {
 function renderDiagramForPath(pathObj) {
   if (!svgContainer) return;
   try {
-    const svgStr = buildSVGForPath(pathObj, null); // pass state if needed by builder
+    // Pass live State so the builder can resolve entries, edge types, etc.
+    const svgStr = buildSVGForPath(pathObj, State);
     svgContainer.innerHTML = svgStr;
 
     // store last svg for download
@@ -182,22 +190,21 @@ function renderDiagramForPath(pathObj) {
 
 /* ---------- Compute (bridge to paths.js) ---------- */
 async function computeAndRenderAll(state, opts = { includeLateral: true, includeContains: true, maxPaths: 2000 }) {
-  // computeAllPaths is a pure sync function in our plan; but we call it from here and adapt result shape
-  const results = computeAllPaths(state, opts); // expected array of path objects
+  // computeAllPaths returns an object { paths, cycles, truncated }
+  const out = computeAllPaths(state, opts, opts.maxPaths);
+  const arr = Array.isArray(out?.paths) ? out.paths : [];
+
   // ensure normalized shape: nodes are target objects and vulnsPerNode array exists
-  const normalized = (results || []).map(r => {
+  const normalized = arr.map(r => {
     return {
       attacker: r.attackerName || r.attacker || r.attackerId || '',
       attackerId: r.attackerId || '',
       nodes: r.nodes || (r.nodeIds || []).map(id => ({ id, name: id })), // fallback
-      vulnsPerNode: r.vulnsPerNode || (r.nodes ? r.nodes.map(() => []) : [])
+      vulnsPerNode: Array.isArray(r.vulnsPerNode) ? r.vulnsPerNode : (r.nodes ? r.nodes.map(() => []) : [])
     };
   });
 
-  // store meta (example fields)
-  const meta = { cycles: false, truncated: false };
-  // if computeAllPaths returned meta, merge it (some implementations do)
-  if (Array.isArray(results) && results._meta) Object.assign(meta, results._meta);
+  const meta = { cycles: !!out.cycles, truncated: !!out.truncated };
 
   // render
   renderResults(normalized, meta);
@@ -227,7 +234,7 @@ function initResultsPanel(opts = {}) {
       // Use filtered display results if checkbox on, else use full
       const toExport = chkOnlyVuln && chkOnlyVuln.checked ? getDisplayResults() : lastResults;
       if (!toExport || !toExport.length) return alert('No paths to export.');
-      exportODS(toExport, lastMeta);
+      exportODS(State, { results: toExport });
     });
   }
 }
