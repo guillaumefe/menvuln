@@ -5,6 +5,9 @@
    speed control, and cursor timeline stepping.
    ========================================================= */
 
+import { State } from '../state.js';
+import { saveToLocal } from '../storage.js';
+
 const SCENARIOS = [];
 
 /* ---------------- Registry ---------------- */
@@ -21,16 +24,80 @@ const CTRL = {
   speed: 1.0          // 0.2..3.0
 };
 
-/* ---------------- Cursor timeline (for step back/forward) ---------------- */
-const TIMELINE = {
-  points: [],  // [{x, y, t}]
-  idx: -1
-};
+/* ---------------- Abort helper ---------------- */
+function shouldAbort() { return CTRL.stopRequested === true; }
 
-function timelineClear() {
-  TIMELINE.points.length = 0;
-  TIMELINE.idx = -1;
+/* ---------------- State snapshot / restore (sandbox) ---------------- */
+let _snapshot = null;
+
+function takeSnapshot() {
+  try {
+    // structuredClone preserves Sets/Maps/Date; good for our State shape.
+    _snapshot = structuredClone(State);
+  } catch {
+    // last resort: shallow rebuild (Sets will still be Sets because current State uses Sets)
+    _snapshot = JSON.parse(JSON.stringify({
+      version: State.version,
+      attackers: State.attackers.map(a => ({
+        id: a.id, name: a.name,
+        entries: [...a.entries],
+        exits:   [...a.exits]
+      })),
+      targets: State.targets.map(t => ({
+        id: t.id, name: t.name,
+        vulns: [...t.vulns],
+        final: !!t.final
+      })),
+      edges: {
+        direct:   Object.fromEntries(Object.entries(State.edges.direct   || {}).map(([k,v]) => [k, [...v]])),
+        lateral:  Object.fromEntries(Object.entries(State.edges.lateral  || {}).map(([k,v]) => [k, [...v]])),
+        contains: Object.fromEntries(Object.entries(State.edges.contains || {}).map(([k,v]) => [k, [...v]])),
+      }
+    }));
+    // Rehydrate Sets
+    _snapshot.targets.forEach(t => t.vulns = new Set(t.vulns || []));
+    _snapshot.attackers.forEach(a => {
+      a.entries = new Set(a.entries || []);
+      a.exits   = new Set(a.exits   || []);
+    });
+    for (const m of ['direct','lateral','contains']) {
+      for (const k in _snapshot.edges[m]) {
+        _snapshot.edges[m][k] = new Set(_snapshot.edges[m][k] || []);
+      }
+    }
+  }
 }
+
+function restoreSnapshot() {
+  if (!_snapshot) return;
+
+  // Replace State fields in-place (keep same object reference)
+  State.version   = _snapshot.version;
+  State.attackers = _snapshot.attackers.map(a => ({
+    id: a.id, name: a.name,
+    entries: new Set(a.entries),
+    exits:   new Set(a.exits)
+  }));
+  State.targets   = _snapshot.targets.map(t => ({
+    id: t.id, name: t.name,
+    vulns: new Set(t.vulns),
+    final: !!t.final
+  }));
+  State.edges = { direct:{}, lateral:{}, contains:{} };
+  for (const m of ['direct','lateral','contains']) {
+    for (const k in _snapshot.edges[m]) {
+      State.edges[m][k] = new Set(_snapshot.edges[m][k]);
+    }
+  }
+
+  try { saveToLocal(State); } catch {}
+  try { document.dispatchEvent(new CustomEvent('state:changed')); } catch {}
+}
+
+/* ---------------- Cursor timeline (for step back/forward) ---------------- */
+const TIMELINE = { points: [], idx: -1 };
+
+function timelineClear() { TIMELINE.points.length = 0; TIMELINE.idx = -1; safeUpdateButtons(); }
 function timelineRecord(x, y) {
   const t = performance.now();
   TIMELINE.points.push({ x, y, t });
@@ -48,53 +115,6 @@ function timelineGoto(index) {
   safeUpdateButtons();
 }
 
-/* ---------------- Simulation artifacts cleanup ----------------
-   (On efface uniquement ce que la simulation a déposé dans le DOM) */
-const SIM_TRACES = {
-  nodes: new Set(),   // éléments DOM créés par la simulation
-  classAdds: []       // [node, className] ajoutées temporairement
-};
-
-// Marquer un élément DOM comme « appartenant à la simulation »
-export function simMarkEl(node) {
-  if (!node) return null;
-  try { node.setAttribute('data-sim', ''); } catch {}
-  SIM_TRACES.nodes.add(node);
-  return node;
-}
-
-// Ajouter une classe temporaire à retirer au cleanup
-export function simAddTempClass(node, className) {
-  if (!node || !className) return;
-  try {
-    node.classList.add(className);
-    SIM_TRACES.classAdds.push([node, className]);
-  } catch {}
-}
-
-// Nettoyer uniquement les artefacts de simulation (curseur, overlays, classes, timeline)
-export function simCleanupUI() {
-  // 1) retirer le curseur
-  const c = document.getElementById(CURSOR_ID);
-  if (c) c.remove();
-
-  // 2) enlever tous les éléments marqués data-sim
-  try {
-    document.querySelectorAll('[data-sim]').forEach(n => n.remove());
-  } catch {}
-
-  // 3) retirer les classes temporaires
-  SIM_TRACES.classAdds.forEach(([n, cls]) => {
-    try { n.classList.remove(cls); } catch {}
-  });
-  SIM_TRACES.classAdds.length = 0;
-
-  // 4) reset timeline
-  timelineClear();
-
-  safeUpdateButtons();
-}
-
 /* ---------------- Speed helpers ---------------- */
 function readSpeedFromUI() {
   const el = document.getElementById('simSpeed');
@@ -106,91 +126,57 @@ function readSpeedFromUI() {
 readSpeedFromUI();
 
 /* ---------------- Public controls ---------------- */
-export function simSetSpeed(mult) {
-  CTRL.speed = Math.max(0.2, Math.min(3, +mult || 1));
-}
-export function simPlay() {
-  CTRL.paused = false;
-  CTRL.stepArmed = false;
-  safeUpdateButtons();
-}
-export function simPause() {
-  CTRL.paused = true;
-  CTRL.stepArmed = false;
-  safeUpdateButtons();
-}
-export function simToggle() {
-  CTRL.paused = !CTRL.paused;
-  CTRL.stepArmed = false;
-  safeUpdateButtons();
-}
+export function simSetSpeed(mult) { CTRL.speed = Math.max(0.2, Math.min(3, +mult || 1)); }
+export function simPlay() { CTRL.paused = false; CTRL.stepArmed = false; safeUpdateButtons(); }
+export function simPause(){ CTRL.paused = true;  CTRL.stepArmed = false; safeUpdateButtons(); }
+export function simToggle(){ CTRL.paused = !CTRL.paused; CTRL.stepArmed = false; safeUpdateButtons(); }
 export function simStop() {
   CTRL.stopRequested = true;
   CTRL.paused = false;     // allow sleepers to exit
   CTRL.stepArmed = false;
+  simCleanupUI();          // UI artifacts
+}
 
-  // Nettoie uniquement les artefacts de simulation
-  simCleanupUI();
-}
-export function simStep() {
-  // allow one pause gate traversal
-  CTRL.stepArmed = true;
-}
-// step back/forward move the cursor position across recorded timeline points
+/* one-step while paused */
+export function simStep() { CTRL.stepArmed = true; }
+
+/* step back/forward on cursor timeline (no state mutation) */
 export function simStepBack(steps = 10) {
-  CTRL.paused = true;
-  CTRL.stepArmed = false;
+  CTRL.paused = true; CTRL.stepArmed = false;
   if (!TIMELINE.points.length) return;
   const next = Math.max(0, TIMELINE.idx - Math.max(1, steps | 0));
   timelineGoto(next);
-  safeUpdateButtons();
 }
 export function simStepForward(steps = 10) {
-  CTRL.paused = true;
-  CTRL.stepArmed = false;
+  CTRL.paused = true; CTRL.stepArmed = false;
   if (!TIMELINE.points.length) return;
   const next = Math.min(TIMELINE.points.length - 1, TIMELINE.idx + Math.max(1, steps | 0));
   timelineGoto(next);
-  safeUpdateButtons();
 }
-export function simCanStepBack() {
-  return TIMELINE.idx > 0;
-}
-export function simCanStepForward() {
-  return TIMELINE.idx >= 0 && TIMELINE.idx < (TIMELINE.points.length - 1);
-}
+export function simCanStepBack()    { return TIMELINE.idx > 0; }
+export function simCanStepForward() { return TIMELINE.idx >= 0 && TIMELINE.idx < (TIMELINE.points.length - 1); }
 
 /* ---------------- DOM helpers ---------------- */
 const $ = (id) => document.getElementById(id);
-
-// toolbar togglers expected by main.js
 export function disableTopButtons(disabled = true) {
   ['btnSimu', 'btnFindPaths', 'btnExportODS', 'btnImportJSON', 'btnExportJSON'].forEach(id => {
     const b = document.getElementById(id);
     if (b) b.disabled = !!disabled;
   });
 }
-export function enableTopButtons() {
-  disableTopButtons(false);
-}
-function safeUpdateButtons() {
-  try { window.__updatePlaybackButtons && window.__updatePlaybackButtons(); } catch {}
-}
+export function enableTopButtons() { disableTopButtons(false); }
+function safeUpdateButtons() { try { window.__updatePlaybackButtons && window.__updatePlaybackButtons(); } catch {} }
 
 /* Sleep that honors pause/step/stop and speed */
 function sleep(ms) {
   const base = Math.max(0, +ms || 0);
   const scaled = Math.max(10, Math.floor(base / Math.max(0.2, CTRL.speed)));
-
   return new Promise((resolve) => {
     const start = performance.now();
     function loop() {
       if (CTRL.stopRequested) return resolve();
-      if (CTRL.paused && !CTRL.stepArmed) {
-        return setTimeout(loop, 40);
-      }
+      if (CTRL.paused && !CTRL.stepArmed) return setTimeout(loop, 40);
       if (CTRL.stepArmed) CTRL.stepArmed = false;
-
       const elapsed = performance.now() - start;
       if (elapsed >= scaled) return resolve();
       setTimeout(loop, 16);
@@ -222,14 +208,21 @@ function ensureCursor() {
   return c;
 }
 
+function removeCursor() {
+  const c = document.getElementById(CURSOR_ID);
+  if (c) c.remove();
+}
+
+/* --------- FAST-ABORT GUARDS inside helpers (critical!) --------- */
 async function moveToPoint(x, y, msPer100px = 120) {
+  if (shouldAbort()) return;
   const cur = ensureCursor();
 
   // record current position as timeline start
-  {
-    const r0 = cur.getBoundingClientRect();
-    timelineRecord(r0.left + 6, r0.top + 6);
-  }
+  const r0 = cur.getBoundingClientRect();
+  timelineRecord(r0.left + 6, r0.top + 6);
+
+  if (shouldAbort()) return;
 
   const rectNow = cur.getBoundingClientRect();
   const from = { x: rectNow.left + 6, y: rectNow.top + 6 };
@@ -242,18 +235,15 @@ async function moveToPoint(x, y, msPer100px = 120) {
   const dt = dur / steps;
 
   for (let i = 1; i <= steps; i++) {
-    if (CTRL.stopRequested) break;
-
-    while (CTRL.paused && !CTRL.stepArmed && !CTRL.stopRequested) {
-      await sleep(40);
-    }
+    if (shouldAbort()) return;
+    while (CTRL.paused && !CTRL.stepArmed && !CTRL.stopRequested) { await sleep(40); }
     if (CTRL.stepArmed) CTRL.stepArmed = false;
 
     const t = i / steps;
     const nx = from.x + dx * t;
     const ny = from.y + dy * t;
     cur.style.left = `${nx}px`;
-    cur.style.top = `${ny}px`;
+    cur.style.top  = `${ny}px`;
 
     // record each movement for timeline stepping
     timelineRecord(nx, ny);
@@ -263,18 +253,21 @@ async function moveToPoint(x, y, msPer100px = 120) {
 }
 
 async function moveToEl(node, offX = 6, offY = 6) {
-  if (!node) return;
+  if (shouldAbort() || !node) return;
   try { node.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch {}
   await sleep(150);
+  if (shouldAbort()) return;
   const r = node.getBoundingClientRect();
   await moveToPoint(r.left + Math.min(r.width - 2, offX), r.top + Math.min(r.height - 2, offY));
 }
 
 function fireMouse(node) {
+  if (!node || shouldAbort()) return;
   const r = node.getBoundingClientRect();
   const centerX = r.left + r.width / 2;
   const centerY = r.top + r.height / 2;
   for (const type of ['mousedown', 'mouseup', 'click']) {
+    if (shouldAbort()) return;
     node.dispatchEvent(new MouseEvent(type, {
       bubbles: true, cancelable: true, view: window,
       clientX: centerX, clientY: centerY, button: 0
@@ -283,19 +276,22 @@ function fireMouse(node) {
 }
 
 async function click(node, offX = 6, offY = 6) {
-  if (!node) return;
+  if (shouldAbort() || !node) return;
   await moveToEl(node, offX, offY);
+  if (shouldAbort()) return;
   fireMouse(node);
   await sleep(80);
 }
 
 async function typeInto(input, text, perCharMs = 28) {
-  if (!input) return;
+  if (shouldAbort() || !input) return;
   await click(input);
+  if (shouldAbort()) return;
   input.focus();
   input.value = '';
   input.dispatchEvent(new Event('input', { bubbles: true }));
   for (const ch of String(text)) {
+    if (shouldAbort()) return;
     input.value += ch;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(perCharMs);
@@ -303,17 +299,19 @@ async function typeInto(input, text, perCharMs = 28) {
 }
 
 async function selectByText(selectEl, text) {
-  if (!selectEl) return;
+  if (shouldAbort() || !selectEl) return;
   const target = String(text).toLowerCase();
   const options = [...selectEl.options];
-
   for (const opt of options) {
+    if (shouldAbort()) return;
     if (opt.textContent.toLowerCase() === target) {
       await click(selectEl);
+      if (shouldAbort()) return;
       await sleep(120);
       opt.selected = true;
       opt.scrollIntoView({ block: 'center', behavior: 'smooth' });
       await click(opt);
+      if (shouldAbort()) return;
       selectByBrowser(selectEl); // change event for UI handlers
       await sleep(120);
       return;
@@ -322,16 +320,48 @@ async function selectByText(selectEl, text) {
 }
 
 function selectByBrowser(selectEl) {
+  if (shouldAbort() || !selectEl) return;
   selectEl.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function multiSelectByTexts(selectEl, labels = []) {
-  if (!selectEl) return;
+  if (shouldAbort() || !selectEl) return;
   const wanted = new Set(labels.map(x => String(x).toLowerCase()));
   for (const opt of selectEl.options) {
+    if (shouldAbort()) return;
     opt.selected = wanted.has(opt.textContent.toLowerCase());
   }
   selectByBrowser(selectEl);
+}
+
+/* ---------------- Simulation artifacts cleanup (UI only) ---------------- */
+const SIM_TRACES = { nodes: new Set(), classAdds: [] };
+
+export function simMarkEl(node) {
+  if (!node) return null;
+  try { node.setAttribute('data-sim', ''); } catch {}
+  SIM_TRACES.nodes.add(node);
+  return node;
+}
+export function simAddTempClass(node, className) {
+  if (!node || !className) return;
+  try {
+    node.classList.add(className);
+    SIM_TRACES.classAdds.push([node, className]);
+  } catch {}
+}
+
+export function simCleanupUI() {
+  // 1) remove cursor
+  removeCursor();
+  // 2) remove elements tagged as simulation artifacts
+  try { document.querySelectorAll('[data-sim]').forEach(n => n.remove()); } catch {}
+  // 3) remove temp classes
+  SIM_TRACES.classAdds.forEach(([n, cls]) => { try { n.classList.remove(cls); } catch {} });
+  SIM_TRACES.classAdds.length = 0;
+  // 4) timeline reset
+  timelineClear();
+  safeUpdateButtons();
 }
 
 /* ---------------- Public gesture API used by scenarios ---------------- */
@@ -372,22 +402,34 @@ export async function runSimulation(opts = {}) {
   CTRL.stepArmed = false;
   readSpeedFromUI();
 
-  // Surface « simulation » propre (n'efface pas les données métier)
+  // Take a state snapshot so STOP can fully roll back.
+  takeSnapshot();
+
+  // Fresh cursor/timeline/UI artifacts
   simCleanupUI();
 
   disableTopButtons(true);
   CTRL.running = true;
 
   for (const sc of SCENARIOS) {
-    if (CTRL.stopRequested) break;
+    if (shouldAbort()) break;
     await runScenarioObject(sc);
-    if (CTRL.stopRequested) break;
+    if (shouldAbort()) break;
     await sleep(300);
   }
 
   CTRL.running = false;
   disableTopButtons(false);
 
+  // If aborted, restore snapshot so *nothing* from the scenario sticks.
+  if (shouldAbort()) {
+    restoreSnapshot();
+  }
+
+  // Always clean UI artifacts
+  simCleanupUI();
+
+  // Render after finishing/aborting
   if (typeof opts.renderCallback === 'function') {
     try { opts.renderCallback(); } catch {}
   }
@@ -395,7 +437,7 @@ export async function runSimulation(opts = {}) {
 
 /* ---------------- State queries for UI ---------------- */
 export function simIsRunning() { return CTRL.running; }
-export function simIsPaused() { return CTRL.paused; }
+export function simIsPaused()  { return CTRL.paused; }
 export function simHasStopRequest() { return CTRL.stopRequested; }
 
 /* ---------------- Default export ---------------- */
