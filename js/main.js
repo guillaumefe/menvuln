@@ -1,256 +1,253 @@
-// js/main.js — App bootstrap (adapté)
+// Entry point for the ENVULN client-side app (fixed + simulation-ready)
 
-import { el } from './helpers.js';
+import { el, norm } from './helpers.js';
 import * as StateMod from './state.js';
 import { saveToLocal, loadFromLocal } from './storage.js';
 import {
-  renderAttackers, renderTargets, renderVulns,
-  populateSelectors, hydrateEntriesSelect,
-  renderLinksInspector, renderDetailsPanel
+  renderAttackers,
+  renderTargets,
+  renderVulns,
+  populateSelectors,
+  hydrateEntriesSelect,
+  renderLinksInspector,
+  renderDetailsPanel,
 } from './ui/lists.js';
+import { wireLinksUI } from './ui/links.js';
 import { computeAllPaths } from './paths.js';
 import { buildSVGForPath } from './diagram.js';
 import { exportODS } from './exportODS.js';
 
-// Simulation core + ensure scenarios are registered (both ways)
-import { runSimulation, disableTopButtons, enableTopButtons } from './simulation/index.js';
-import './simulation/scenarios.js'; // side effects; harmless if also dynamically imported
+// Simulation (mouse-driven)
+import {
+  runSimulation,
+  disableTopButtons,
+  enableTopButtons
+} from './simulation/index.js';
 
+// IMPORTANT: load scenarios so they are actually registered
+import './simulation/scenarios.js';
+
+/* ---------- Local runtime helpers ---------- */
 let lastResults = [];
 let lastMeta = { cycles: false, truncated: false };
 let lastDiagramSVG = null;
 
-function renderStatus(s) {
-  const sEl = el('status');
-  if (sEl) sEl.textContent = s || '';
+function renderStatus(s){ const sEl = el('status'); if (sEl) sEl.textContent = s; }
+
+function emitStateChanged() {
+  try { saveToLocal(StateMod.State); } catch {}
+  document.dispatchEvent(new CustomEvent('state:changed'));
 }
 
-function safeInt(v, fallback, { min, max } = {}) {
-  let n = Number.parseInt(v, 10);
-  if (Number.isNaN(n)) n = fallback;
-  if (typeof min === 'number') n = Math.max(min, n);
-  if (typeof max === 'number') n = Math.min(max, n);
-  return n;
-}
-
-function convertEdge(obj) {
-  const out = {};
-  if (!obj) return out;
-  for (const k in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, k)) {
-      out[k] = new Set(obj[k] || []);
+/* ---------- Life cycle: init ---------- */
+async function init(){
+  const loaded = loadFromLocal();
+  if (loaded) {
+    // backward/compat hydration
+    if (typeof StateMod.hydrate === 'function') {
+      StateMod.hydrate(loaded);
+    } else {
+      StateMod.State.version = loaded.version || StateMod.State.version;
+      StateMod.State.vulns   = loaded.vulns || [];
+      StateMod.State.targets = (loaded.targets || []).map(t => ({ id: t.id, name: t.name, vulns: new Set(t.vulns), final: !!t.final }));
+      StateMod.State.attackers = (loaded.attackers || []).map(a => ({ id: a.id, name: a.name, entries: new Set(a.entries) }));
+      StateMod.State.edges = {
+        direct:  convertEdge(loaded.edges?.direct),
+        lateral: convertEdge(loaded.edges?.lateral),
+        contains:convertEdge(loaded.edges?.contains),
+      };
     }
   }
+  (StateMod.State.targets || []).forEach(t => StateMod.ensureEdgeMaps(t.id));
+
+  renderAllUI();
+  wireAddControls();  // make the “Add” buttons work
+  wireLinksUI();      // add/remove link wiring
+  wireUI();           // top buttons + simulation
+
+  // initial “changed” so right panel & selects hydrate
+  document.dispatchEvent(new CustomEvent('state:changed'));
+}
+
+function convertEdge(obj){
+  const out = {};
+  if(!obj) return out;
+  for(const k in obj) out[k] = new Set(obj[k] || []);
   return out;
 }
 
-function initStateFromStorage() {
-  const loaded = loadFromLocal();
-  if (!loaded) return;
-
-  if (typeof StateMod.hydrate === 'function') {
-    StateMod.hydrate(loaded);
-    return;
-  }
-  // Fallback hydrate
-  StateMod.State.version = loaded.version || StateMod.State.version;
-  StateMod.State.vulns = loaded.vulns || [];
-  StateMod.State.targets = (loaded.targets || []).map(t => ({
-    id: t.id, name: t.name, vulns: new Set(t.vulns), final: !!t.final
-  }));
-  StateMod.State.attackers = (loaded.attackers || []).map(a => ({
-    id: a.id, name: a.name, entries: new Set(a.entries)
-  }));
-  StateMod.State.edges = {
-    direct:   convertEdge(loaded.edges?.direct),
-    lateral:  convertEdge(loaded.edges?.lateral),
-    contains: convertEdge(loaded.edges?.contains),
-  };
-}
-
-function renderAllUI() {
+function renderAllUI(){
   renderAttackers(StateMod.State);
   renderTargets(StateMod.State);
   renderVulns(StateMod.State);
   populateSelectors(StateMod.State);
-  hydrateEntriesSelect(StateMod.State);
+  hydrateEntriesSelect();
   renderLinksInspector();
   renderDetailsPanel();
 }
 
-function filterOnlyVuln(results) {
+/* ---------- Add buttons wiring (left panel) ---------- */
+function wireAddControls(){
+  const attackerInput = el('attackerName');
+  const attackerBtn   = el('btnAddAttacker');
+  if (attackerBtn && attackerInput) {
+    attackerBtn.onclick = () => {
+      const name = norm(attackerInput.value);
+      if (!name) return alert('Attacker name required');
+      try {
+        StateMod.createAttacker(name);
+        attackerInput.value = '';
+        emitStateChanged();
+        renderAllUI();
+      } catch (e) { alert(e.message || 'Failed to add attacker'); }
+    };
+  }
+
+  const targetInput = el('targetName');
+  const targetBtn   = el('btnAddTarget');
+  if (targetBtn && targetInput) {
+    targetBtn.onclick = () => {
+      const name = norm(targetInput.value);
+      if (!name) return alert('Target name required');
+      try {
+        const id = StateMod.createTarget(name, false);
+        StateMod.ensureEdgeMaps(id);
+        targetInput.value = '';
+        emitStateChanged();
+        renderAllUI();
+      } catch (e) { alert(e.message || 'Failed to add target'); }
+    };
+  }
+
+  const vulnInput = el('vulnName');
+  const vulnBtn   = el('btnAddVuln');
+  if (vulnBtn && vulnInput) {
+    vulnBtn.onclick = () => {
+      const name = norm(vulnInput.value);
+      if (!name) return alert('Vulnerability name required');
+      try {
+        StateMod.createVuln(name);
+        vulnInput.value = '';
+        emitStateChanged();
+        renderAllUI();
+      } catch (e) { alert(e.message || 'Failed to add vulnerability'); }
+    };
+  }
+}
+
+/* ---------- Results panel (center) ---------- */
+function filterOnlyVuln(results){
   const only = el('chkOnlyVuln')?.checked;
-  if (!only) return results;
-  return results.filter(p => (p.vulnsPerNode || []).every(v => Array.isArray(v) && v.length > 0));
+  if(!only) return results;
+  return results.filter(p => Array.isArray(p.vulnsPerNode) && p.vulnsPerNode.every(vs => vs && vs.length));
 }
 
-function makePathRow(p) {
-  const row = document.createElement('div');
-  row.className = 'path';
-
-  const left = document.createElement('div');
-  left.className = 'left';
-
-  // Attacker name
-  const attackerDiv = document.createElement('div');
-  const strong = document.createElement('strong');
-  strong.textContent = String(p.attackerName || p.attacker || '');
-  attackerDiv.appendChild(strong);
-
-  // Path nodes
-  const nodesDiv = document.createElement('div');
-  nodesDiv.className = 'small';
-  const pathText = (p.nodes || []).map(n => n?.name || '').join(' → ');
-  nodesDiv.textContent = pathText;
-
-  left.append(attackerDiv, nodesDiv);
-
-  const right = document.createElement('div');
-  const btn = document.createElement('button');
-  btn.className = 'ghost';
-  btn.type = 'button';
-  btn.textContent = 'Diagram';
-  btn.addEventListener('click', () => {
-    try {
-      lastDiagramSVG = buildSVGForPath(p, StateMod.State);
-      const box = el('diagramBox');
-      if (box) {
-        // Injection sûre : SVG généré par notre code
-        box.innerHTML = lastDiagramSVG;
-      }
-    } catch (e) {
-      console.error(e);
-      alert('Diagram build error.');
-    }
-  });
-  right.appendChild(btn);
-
-  row.append(left, right);
-  return row;
-}
-
-function renderResultsView(results, meta) {
+function renderResultsView(results, meta){
   const container = el('results');
-  if (!container) return;
-
-  // Clear
-  while (container.firstChild) container.removeChild(container.firstChild);
-
-  if (!results.length) {
-    const empty = document.createElement('div');
-    empty.className = 'small';
-    empty.textContent = 'No paths.';
-    container.appendChild(empty);
+  container.innerHTML = '';
+  if(!results.length){
+    container.innerHTML = `<div class="small">No paths.</div>`;
     renderStatus('0 paths');
     return;
   }
-
-  results.forEach(p => container.appendChild(makePathRow(p)));
-
-  const parts = [`${results.length} paths`];
-  if (meta.cycles) parts.push('(cycles detected)');
-  if (meta.truncated) parts.push('(truncated)');
-  renderStatus(parts.join(' '));
+  results.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'path';
+    const left = document.createElement('div');
+    left.className = 'left';
+    left.innerHTML = `
+      <div><strong>${p.attackerName || p.attacker || ''}</strong></div>
+      <div class="small">${p.nodes.map(n => n.name).join(' → ')}</div>
+    `;
+    const right = document.createElement('div');
+    const btn = document.createElement('button');
+    btn.className = 'ghost';
+    btn.textContent = 'Diagram';
+    btn.onclick = () => {
+      lastDiagramSVG = buildSVGForPath(p, StateMod.State);
+      const box = el('diagramBox');
+      if(box) box.innerHTML = lastDiagramSVG;
+    };
+    right.appendChild(btn);
+    row.appendChild(left);
+    row.appendChild(right);
+    container.appendChild(row);
+  });
+  const bits = [`${results.length} paths`];
+  if (meta?.cycles) bits.push('cycles detected');
+  if (meta?.truncated) bits.push('truncated by ceiling');
+  renderStatus(bits.join(' • '));
 }
 
-async function onComputePaths() {
-  try {
+async function onComputePaths(){
+  try{
     renderStatus('Computing…');
-
-    const maxPaths = safeInt(el('maxPaths')?.value || '2000', 2000, { min: 1, max: 100000 });
     const opts = {
-      includeLateral:  !!el('includeLateral')?.checked,
-      includeContains: !!el('includeContains')?.checked,
-      maxPaths
+      includeLateral: el('includeLateral')?.checked,
+      includeContains: el('includeContains')?.checked
     };
+    const maxPaths = parseInt(el('maxPaths')?.value || '2000', 10);
 
+    // FIX: computeAllPaths returns { paths, cycles, truncated }
     const out = computeAllPaths(StateMod.State, opts, maxPaths);
     lastResults = out.paths || [];
     lastMeta = { cycles: !!out.cycles, truncated: !!out.truncated };
 
     renderResultsView(filterOnlyVuln(lastResults), lastMeta);
-    saveToLocal(StateMod.State);
-  } catch (e) {
+  }catch(e){
     console.error(e);
-    alert('Path computation error.');
-    renderStatus('Error');
+    alert('Path error');
   }
 }
 
-function onExportODS() {
-  if (!lastResults.length) {
-    alert('No paths to export.');
-    return;
-  }
-  try {
-    exportODS(lastResults, { state: StateMod.State });
-  } catch (e) {
-    console.error(e);
-    alert('Export error.');
-  }
+function onExportODS(){
+  if (!lastResults.length) return alert('No paths to export.');
+  exportODS(StateMod.State, { results: lastResults });
 }
 
-function onDownloadSVG() {
-  if (!lastDiagramSVG) {
-    alert('No diagram');
-    return;
-  }
-  try {
-    const blob = new Blob([lastDiagramSVG], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'diagram.svg';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    // Révoque de façon sûre après le click
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  } catch (e) {
-    console.error(e);
-    alert('Download error.');
-  }
+function onDownloadSVG(){
+  if(!lastDiagramSVG) return alert('No diagram');
+  const blob = new Blob([lastDiagramSVG], { type:'image/svg+xml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `diagram.svg`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
-function wireUI() {
-  el('btnFindPaths')?.addEventListener('click', onComputePaths);
-  el('btnExportODS')?.addEventListener('click', onExportODS);
-  el('btnDownloadSVG')?.addEventListener('click', onDownloadSVG);
+/* ---------- Top bar wiring ---------- */
+function wireUI(){
+  const btnFindPaths = el('btnFindPaths');
+  if(btnFindPaths) btnFindPaths.onclick = onComputePaths;
+
+  const btnExport = el('btnExportODS');
+  if(btnExport) btnExport.onclick = onExportODS;
+
+  const btnDownload = el('btnDownloadSVG');
+  if(btnDownload) btnDownload.onclick = onDownloadSVG;
 
   const btnSimu = el('btnSimu');
-  if (btnSimu) {
-    btnSimu.addEventListener('click', async () => {
-      try {
+  if(btnSimu){
+    btnSimu.onclick = async () => {
+      try{
         disableTopButtons(true);
         btnSimu.textContent = 'Simulating…';
         btnSimu.disabled = true;
         await runSimulation({ renderCallback: () => renderAllUI() });
-      } catch (e) {
-        console.error(e);
-        alert('Simulation error.');
-      } finally {
+      }finally{
         btnSimu.textContent = 'Simulation';
         btnSimu.disabled = false;
-        enableTopButtons(true);
+        enableTopButtons();
         renderAllUI();
       }
-    });
+    };
   }
 
-  el('chkOnlyVuln')?.addEventListener('change', () => {
-    renderResultsView(filterOnlyVuln(lastResults), lastMeta);
-  });
-}
-
-async function init() {
-  try {
-    initStateFromStorage();
-    (StateMod.State.targets || []).forEach(t => StateMod.ensureEdgeMaps(t.id));
-    renderAllUI();
-    wireUI();
-  } catch (e) {
-    console.error(e);
-    alert('Init error.');
+  const chkOnly = el('chkOnlyVuln');
+  if (chkOnly) {
+    chkOnly.addEventListener('change', () => {
+      renderResultsView(filterOnlyVuln(lastResults), lastMeta);
+    });
   }
 }
 
