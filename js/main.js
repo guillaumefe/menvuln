@@ -21,7 +21,9 @@ import { exportODS } from './exportODS.js';
 import {
   runSimulation,
   disableTopButtons,
-  enableTopButtons
+  enableTopButtons,
+  simPlay, simPause, simToggle, simStop, simStep, simSetSpeed,
+  simIsRunning, simIsPaused
 } from './simulation/index.js';
 
 let lastResults = [];
@@ -63,6 +65,125 @@ function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.n
 }
 
 /* -------------------------------------------------------------------------- */
+/* Playback                                                                   */
+/* -------------------------------------------------------------------------- */
+function bridgeSimulationPlayback() {
+  const btnPP = el('btnPlayPause');
+  const btnStop = el('btnStop');
+  const btnRestart = el('btnRestart');
+  const btnStepForward = el('btnStepForward');
+  const speed = el('simSpeed');
+  const speedLabel = el('simSpeedValue');
+
+  // Speed → simulation (live)
+  if (speed) {
+    const applySpeed = () => {
+      const v = parseFloat(speed.value || '1') || 1;
+      simSetSpeed(v);
+      if (speedLabel) speedLabel.textContent = `×${v.toFixed(1)}`;
+    };
+    applySpeed();
+    speed.addEventListener('input', applySpeed);
+  }
+
+  // Play / Pause
+  if (btnPP) {
+    btnPP.addEventListener('click', async () => {
+      if (!simIsRunning()) {
+        simPlay();
+        await runSimulation({ renderCallback: () => renderAllUI() });
+      } else {
+        simToggle();
+      }
+      // Optionnel: rafraîchit l’état visuel si tu affiches un état
+      // (ta fonction playback_updateButtons reste intacte)
+    });
+  }
+
+  // Stop
+  if (btnStop) {
+    btnStop.addEventListener('click', () => {
+      if (simIsRunning()) simStop();
+    });
+  }
+
+  // Restart
+  if (btnRestart) {
+    btnRestart.addEventListener('click', async () => {
+      if (simIsRunning()) simStop();
+      setTimeout(async () => {
+        simPlay();
+        await runSimulation({ renderCallback: () => renderAllUI() });
+      }, 60);
+    });
+  }
+
+  // Step forward (pas de time-travel; step back est laissé tel quel)
+  if (btnStepForward) {
+    btnStepForward.addEventListener('click', () => {
+      if (!simIsRunning()) {
+        // Démarre en pause, puis laisse passer un "pas"
+        simPause();
+        runSimulation({ renderCallback: () => renderAllUI() }).then(() => {/* noop */});
+        setTimeout(() => simStep(), 40);
+      } else {
+        if (!simIsPaused()) simPause();
+        simStep();
+      }
+    });
+  }
+}
+
+function ensureSimScenarioLinkButtons() {
+  const byId = (id) => document.getElementById(id);
+
+  // Création si absent
+  ['btnAddLink','btnRemoveLink'].forEach(id => {
+    if (!byId(id)) {
+      const b = document.createElement('button');
+      b.id = id;
+      b.type = 'button';
+      b.hidden = true; // invisible
+      document.body.appendChild(b);
+    }
+  });
+
+  // Handlers: lis la sélection et applique dans l’état
+  const btnAdd = byId('btnAddLink');
+  const btnDel = byId('btnRemoveLink');
+
+  const srcSel  = byId('linkSource');
+  const dstSel  = byId('linkDest');
+  const typeSel = byId('linkType');
+
+  const apply = (mode) => {
+    const from = srcSel?.value;
+    const type = typeSel?.value || 'direct';
+    if (!from || !dstSel) return;
+
+    const selectedTos = [...dstSel.selectedOptions].map(o => o.value);
+    if (!selectedTos.length) return;
+
+    // Utilise les helpers existants de state.js via StateMod.*
+    selectedTos.forEach(to => {
+      try {
+        if (mode === 'add') {
+          StateMod.addEdge(type, from, to);
+        } else {
+          StateMod.removeEdge(type, from, to);
+        }
+      } catch(e) { /* ignore */ }
+    });
+
+    try { saveToLocal(StateMod.State); } catch {}
+    renderLinksInspector(); // garde l’inspecteur en phase
+  };
+
+  if (btnAdd) btnAdd.addEventListener('click', () => apply('add'));
+  if (btnDel) btnDel.addEventListener('click', () => apply('del'));
+}
+
+/* -------------------------------------------------------------------------- */
 /* Initialization                                                             */
 /* -------------------------------------------------------------------------- */
 async function init() {
@@ -81,6 +202,8 @@ async function init() {
   wireTopActions();
   wireSimulationButton();
   wirePlaybackControls();
+  bridgeSimulationPlayback();
+  ensureSimScenarioLinkButtons();
 }
 
 /* -------------------------------------------------------------------------- */
