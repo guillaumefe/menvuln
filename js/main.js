@@ -466,7 +466,9 @@ function wireTopActions() {
   };
 
   const hasVulnsEverywhere = p =>
-    Array.isArray(p.vulnsPerNode) && p.vulnsPerNode.every(v => Array.isArray(v) && v.length > 0);
+    Array.isArray(p.vulnsPerNode) &&
+    p.vulnsPerNode.slice(1).length > 0 &&
+    p.vulnsPerNode.slice(1).every(v => Array.isArray(v) && v.length > 0);
 
   const renderFiltered = () => {
     const onlyVuln = !!(chkOnlyVuln && chkOnlyVuln.checked);
@@ -766,7 +768,9 @@ function playback_computeIfNeededAndStart() {
 
   const chkOnlyVuln = el('chkOnlyVuln');
   const hasVulnsEverywhere = p =>
-    Array.isArray(p.vulnsPerNode) && p.vulnsPerNode.every(v => Array.isArray(v) && v.length > 0);
+    Array.isArray(p.vulnsPerNode) &&
+    p.vulnsPerNode.slice(1).length > 0 &&
+    p.vulnsPerNode.slice(1).every(v => Array.isArray(v) && v.length > 0);
   const display = chkOnlyVuln && chkOnlyVuln.checked
     ? lastResults.filter(hasVulnsEverywhere)
     : lastResults;
