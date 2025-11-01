@@ -244,6 +244,7 @@ export function hydrateEntriesSelect(state = State){
 
 /** Thin wrapper so main.js can call a stable name. (hoisted named export) */
 export function renderDetailsPanel(){
+  // Keep the right-panel updater centralized in editors.js
   hydrateDetailsPanel();
 }
 
