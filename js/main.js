@@ -24,7 +24,9 @@ import {
   disableTopButtons,
   enableTopButtons,
   simPlay, simPause, simToggle, simStop, simStep, simSetSpeed,
-  simIsRunning, simIsPaused
+  simStepBack, simStepForward,
+  simIsRunning, simIsPaused,
+  simCanStepBack, simCanStepForward
 } from './simulation/index.js';
 
 let lastResults = [];
@@ -784,19 +786,23 @@ function wirePlaybackControls() {
     playback_restart();
   };
   if (btnStepBack) btnStepBack.onclick = () => {
-    if (typeof simIsRunning === 'function' && simIsRunning()) {
+    if (simIsRunning && simIsRunning()) {
       try { simPause(); } catch {}
+      try { simStepBack(10); } catch {}   // recule “quelques étapes”
       setPlayPauseVisual(false);
+      playback_updateButtons();
       return;
     }
     playback_pause();
     playback_stepBack();
   };
+
   if (btnStepForward) btnStepForward.onclick = () => {
-    if (typeof simIsRunning === 'function' && simIsRunning()) {
+    if (simIsRunning && simIsRunning()) {
       try { simPause(); } catch {}
+      try { simStepForward(10); } catch {} // avance “quelques étapes”
       setPlayPauseVisual(false);
-      try { simStep(); } catch {}
+      playback_updateButtons();
       return;
     }
     playback_pause();
