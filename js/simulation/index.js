@@ -10,17 +10,6 @@ export function registerScenario(name, fn, weight = 1) {
   SCENARIOS.push({ name, fn, weight: Math.max(0, +weight || 1) });
 }
 
-function pickScenario() {
-  const total = SCENARIOS.reduce((s, x) => s + x.weight, 0);
-  if (!total) return null;
-  let r = Math.random() * total;
-  for (const s of SCENARIOS) {
-    r -= s.weight;
-    if (r <= 0) return s;
-  }
-  return SCENARIOS[SCENARIOS.length - 1] || null;
-}
-
 /* ---------------- DOM helpers ---------------- */
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
@@ -179,44 +168,27 @@ async function runScenarioObject(sc) {
     await sc.fn(g);
   } catch (e) {
     console.error(e);
-    alert(e?.message || 'Simulation error');
   } finally {
     disableTopButtons(false);
   }
 }
 
-export async function runRandomScenario() {
-  const sc = pickScenario();
-  if (!sc) {
-    alert('No simulation scenarios available.');
-    return;
-  }
-  return runScenarioObject(sc);
-}
-
-export async function runScenario(name) {
-  const sc = SCENARIOS.find(s => s.name === name);
-  if (!sc) {
-    alert(`Scenario not found: ${name}`);
-    return;
-  }
-  return runScenarioObject(sc);
-}
-
 export async function runSimulation(opts = {}) {
-  if (opts?.scenarioName) await runScenario(opts.scenarioName);
-  else await runRandomScenario();
+  disableTopButtons(true);
+  for (const sc of SCENARIOS) {
+    await runScenarioObject(sc);
+    await sleep(300);
+  }
+  enableTopButtons();
 
   if (typeof opts.renderCallback === 'function') {
-    try { opts.renderCallback(); } catch (e) {}
+    try { opts.renderCallback(); } catch {}
   }
 }
 
 export default {
   registerScenario,
   runSimulation,
-  runRandomScenario,
-  runScenario,
   disableTopButtons,
   enableTopButtons,
   g,
