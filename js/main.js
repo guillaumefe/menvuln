@@ -94,22 +94,22 @@ function setPlaybackEnabled(enabled) {
 /* Full wipe (used by Reset All) — clears state + results + diagram + playback */
 /* -------------------------------------------------------------------------- */
 function resetAllApp() {
-  // 1) stop any running simulation & remove cursor
+  // 1) stop any running simulation and remove cursor
   try { simStop(); } catch {}
   const cur = document.getElementById('__sim_cursor'); if (cur) cur.remove();
 
-  // 2) wipe domain state (attackers/targets/vulns/edges)
+  // 2) wipe domain state
   StateMod.State.attackers = [];
   StateMod.State.targets   = [];
   StateMod.State.vulns     = [];
   StateMod.State.edges     = { direct: {}, lateral: {}, contains: {} };
 
-  // 3) storage + last-results cache
+  // 3) storage and last-results cache
   try { clearLocal(); } catch {}
   lastResults = [];
   lastMeta = { cycles: false, truncated: false };
 
-  // 4) clear UI: results list, diagram area, size/status labels, inputs
+  // 4) clear UI
   const resultsEl = el('results');    if (resultsEl) resultsEl.innerHTML = '';
   const diagram   = el('diagramBox');
   if (diagram) {
@@ -128,12 +128,11 @@ function resetAllApp() {
   const inTar = el('targetName');   if (inTar) inTar.value = '';
   const inVul = el('vulnName');     if (inVul) inVul.value = '';
 
-  // 5) **critical** — clear playback dataset BEFORE resetting it,
-  //    otherwise playback_resetToStart() will re-render old diagram.
-  playback_setDataset([]);   // empties dataset and updates buttons
-  playback_resetToStart();   // pauses, index=0, does NOT re-render an old SVG now
+  // 5) clear playback dataset and reset playback
+  playback_setDataset([]);
+  playback_resetToStart();
 
-  // 6) disable playback controls & re-render lists/selectors
+  // 6) disable playback controls and rerender
   setPlaybackEnabled(false);
   setPlayPauseVisual(false);
   renderAllUI();
@@ -217,7 +216,7 @@ async function init() {
   bridgeSimulationPlayback();
   ensureSimScenarioLinkButtons();
 
-  // Playback disabled by default until a simulation is started
+  // playback disabled by default until a simulation is started
   setPlaybackEnabled(false);
   setPlayPauseVisual(false);
   playback_setDataset([]);
@@ -420,7 +419,12 @@ function renderResultsList(results) {
   const svgSizeEl = el('svgSize');
   cont.innerHTML = '';
   if (!results.length) {
-    cont.innerHTML = '<div class="small">No paths.</div>';
+    // Provide a useful reason when the list is empty
+    const filterOn = !!el('chkOnlyVuln')?.checked;
+    const msg = (filterOn && (lastResults?.length || 0) > 0)
+      ? 'No paths match the "Only vulnerable paths" filter.'
+      : 'No paths.';
+    cont.innerHTML = `<div class="small">${msg}</div>`;
     if (svgSizeEl) svgSizeEl.textContent = '—';
     playback_setDataset([]);
     return;
@@ -465,6 +469,7 @@ function wireTopActions() {
     renderStatus(parts.join(' • '));
   };
 
+  // Consider a path "vulnerable everywhere" only from the second node onward
   const hasVulnsEverywhere = p =>
     Array.isArray(p.vulnsPerNode) &&
     p.vulnsPerNode.slice(1).length > 0 &&
@@ -554,8 +559,8 @@ function wireSimulationButton() {
     try {
       disableTopButtons(true);
       setPlaybackEnabled(true);
-      setPlayPauseVisual(true);      // show "pause" immediately
-      playback_updateButtons();      // ensure icon reflects sim state
+      setPlayPauseVisual(true);
+      playback_updateButtons();
       btn.textContent = 'Simulating…';
       btn.disabled = true;
       await runSimulation({ renderCallback: () => renderAllUI() });
@@ -567,7 +572,7 @@ function wireSimulationButton() {
       setPlaybackEnabled(false);
       renderAllUI();
       playback_resetToStart?.();
-      playback_updateButtons();      // reset icon after sim ends
+      playback_updateButtons();
     }
   };
 }
@@ -660,14 +665,14 @@ function playback_updateButtons() {
   const simPaused  = (typeof simIsPaused  === 'function') && simIsPaused();
   const hasData    = playback.dataset.length > 0;
 
-  // Enable row when (a) sim is running OR (b) dataset is present — and the row is globally enabled
+  // enable the row when (a) sim is running OR (b) dataset is present, and the row is globally enabled
   const enableRow  = playbackControlsEnabled && (simRunning || hasData);
 
   [btnPP, btnStop, btnRestart, btnStepBack, btnStepForward].forEach(b => {
     if (b) b.disabled = !enableRow;
   });
 
-  // Step buttons: use sim stepping when sim is running, otherwise dataset edges
+  // step buttons: use sim stepping when sim is running, otherwise dataset edges
   if (enableRow) {
     if (simRunning) {
       if (btnStepBack)    btnStepBack.disabled    = !(typeof simCanStepBack === 'function' && simCanStepBack());
@@ -678,7 +683,7 @@ function playback_updateButtons() {
     }
   }
 
-  // Icon logic: simulation state wins; dataset playback is only used when no sim is running
+  // icon logic: simulation state wins; dataset playback is used when no sim is running
   if (btnPP) {
     if (simRunning) {
       btnPP.textContent = simPaused ? '▶' : '⏸';
@@ -767,6 +772,7 @@ function playback_computeIfNeededAndStart() {
   lastMeta = { cycles: !!out.cycles, truncated: !!out.truncated };
 
   const chkOnlyVuln = el('chkOnlyVuln');
+  // Same "everywhere" definition as in wireTopActions
   const hasVulnsEverywhere = p =>
     Array.isArray(p.vulnsPerNode) &&
     p.vulnsPerNode.slice(1).length > 0 &&
@@ -781,12 +787,21 @@ function playback_computeIfNeededAndStart() {
     playback_renderCurrent();
     playback_play();
   } else {
-    renderStatus('0 paths • check entries/exits and links');
+    // Provide a status hint about probable cause
+    const filterOn = !!el('chkOnlyVuln')?.checked;
+    const anyExits = (StateMod.State.attackers || []).some(a => (a.exits instanceof Set ? a.exits.size : (a.exits || []).length) > 0);
+    if (filterOn && (lastResults?.length || 0) > 0) {
+      renderStatus('0 paths • all were excluded by "Only vulnerable paths".');
+    } else if (anyExits) {
+      renderStatus('0 paths • check exit nodes are actually reachable.');
+    } else {
+      renderStatus('0 paths • check entries, links and options.');
+    }
   }
 }
 
 /* -------------------------------------------------------------------------- */
-/* Wire dataset+simulation playback controls (single source of truth)         */
+/* Wire dataset + simulation playback controls                                */
 /* -------------------------------------------------------------------------- */
 function wirePlaybackControls() {
   const btnPP         = el('btnPlayPause');
@@ -916,7 +931,7 @@ function wirePlaybackControls() {
     });
   }
 
-  // État initial propre
+  // initial clean state
   playback_updateButtons();
   playback_renderCurrent();
 }
