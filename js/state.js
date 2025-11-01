@@ -1,48 +1,34 @@
-/* =========================================================
-   state.js — Application global state (singleton module)
-   Pure logic — NO DOM access, NO rendering here.
-   ========================================================= */
+// js/state.js
+// Global application state
 
 import { uid } from './helpers.js';
 
 export const State = {
   version: 4,
-
-  // attackers: add exits alongside entries
-  // { id, name, entries:Set<targetId>, exits:Set<targetId> }
-  attackers: [],
-  // targets: { id, name, vulns:Set<vulnId>, final:boolean }
-  targets: [],
-  // vulns:   { id, name }
-  vulns: [],
-
+  attackers: [],   // { id, name, entries:Set<targetId>, exits:Set<targetId> }
+  targets: [],     // { id, name, vulns:Set<vulnId>, final:boolean }
+  vulns: [],       // { id, name }
   edges: {
-    direct: {},    // key:sourceId -> Set<destId>
+    direct: {},
     lateral: {},
     contains: {}
   }
 };
 
-/* ----------------- helpers (internal) ------------------ */
-
-function ensureEdgeMaps(id){
+export function ensureEdgeMaps(id){
   State.edges.direct[id]   = State.edges.direct[id]   || new Set();
   State.edges.lateral[id]  = State.edges.lateral[id]  || new Set();
   State.edges.contains[id] = State.edges.contains[id] || new Set();
 }
-export { ensureEdgeMaps }; // if UI/tools need it
 
 function uniqueNameExists(list, name){
   return list.some(x => x.name.trim().toLowerCase() === name.trim().toLowerCase());
 }
 
-/* ----------------- Attackers CRUD ------------------ */
-
 export function createAttacker(name){
   name = name.trim();
   if(!name) throw new Error('Attacker name required');
-  if(uniqueNameExists(State.attackers, name)) throw new Error('Attacker exists');
-
+  if(uniqueNameExists(State.attackers, name)) throw new Error('Attacker already exists');
   const id = uid();
   State.attackers.push({ id, name, entries:new Set(), exits:new Set() });
   return id;
@@ -62,13 +48,10 @@ export function deleteAttacker(id){
   State.attackers = State.attackers.filter(a=>a.id!==id);
 }
 
-/* ----------------- Targets CRUD ------------------ */
-
 export function createTarget(name, isFinal=false){
   name = name.trim();
   if(!name) throw new Error('Target name required');
-  if(uniqueNameExists(State.targets,name)) throw new Error('Target exists');
-
+  if(uniqueNameExists(State.targets,name)) throw new Error('Target already exists');
   const id = uid();
   State.targets.push({ id, name, vulns:new Set(), final:!!isFinal });
   ensureEdgeMaps(id);
@@ -93,8 +76,6 @@ export function setTargetFinal(id, val){
 
 export function deleteTarget(id){
   State.targets = State.targets.filter(t=>t.id!==id);
-
-  // clean edges & entries/exits
   for(const m of Object.values(State.edges)){
     delete m[id];
     for(const k in m) m[k].delete(id);
@@ -105,12 +86,10 @@ export function deleteTarget(id){
   });
 }
 
-/* ----------------- Vulnerabilities CRUD ------------------ */
-
 export function createVuln(name){
   name = name.trim();
   if(!name) throw new Error('Vulnerability name required');
-  if(uniqueNameExists(State.vulns,name)) throw new Error('Vulnerability exists');
+  if(uniqueNameExists(State.vulns,name)) throw new Error('Vulnerability already exists');
   const id = uid();
   State.vulns.push({ id, name });
   return id;
@@ -128,8 +107,6 @@ export function toggleVulnOnTarget(targetId, vulnId, enable){
   if(enable) t.vulns.add(vulnId); else t.vulns.delete(vulnId);
 }
 
-/* ----------------- Entries/Exits (attacker) ------------------ */
-
 export function setAttackerEntries(attackerId, entryIds){
   const a = State.attackers.find(x=>x.id===attackerId);
   if(!a) throw new Error('Unknown attacker');
@@ -142,8 +119,6 @@ export function setAttackerExits(attackerId, exitIds){
   a.exits = new Set(exitIds);
 }
 
-/* ----------------- Graph edges ------------------ */
-
 export function addEdge(type, fromId, toId){
   if(!State.edges[type]) throw new Error('Invalid edge type');
   ensureEdgeMaps(fromId);
@@ -155,8 +130,6 @@ export function removeEdge(type, fromId, toId){
   if(State.edges[type][fromId]) State.edges[type][fromId].delete(toId);
 }
 
-/* ----------------- Utility getters ------------------ */
-
 export const getAttackers = ()=> State.attackers;
 export const getTargets   = ()=> State.targets;
 export const getVulns     = ()=> State.vulns;
@@ -165,7 +138,6 @@ export function getTargetName(id){
   return (State.targets.find(t=>t.id===id)?.name) || '?';
 }
 
-/* For debug in console */
 if(typeof window !== 'undefined'){
   window.State = State;
 }
