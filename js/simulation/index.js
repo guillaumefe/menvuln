@@ -264,13 +264,13 @@ async function runSimulation(opts = {}) {
 /* ---------------- convenience exports ---------------- */
 export {
   addScenario as registerScenario,
-  runSimulation,          // <- added
+  runSimulation,
   runRandomScenario,
   runScenario,
   pickScenario,
   SCENARIOS,
-  disableTopButtons,      // <- added
-  enableTopButtons        // <- added
+  disableTopButtons,
+  enableTopButtons
 };
 
 /* ---------------- Example: register built-in simple scenarios (optional) ----------------
