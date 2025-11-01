@@ -253,3 +253,42 @@ button.ghost:hover {
 #panelEntities .list > div button + button {
   margin-left: 8px;
 }
+
+/* ===============================
+   Compact lists in the left panel
+==================================== */
+
+#panelEntities .list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;                 /* space between cards */
+}
+
+#panelEntities .list > div {
+  position: relative;        /* required to position the buttons on the right */
+  padding: 12px 180px 12px 14px; /* space reserved on the right for the buttons */
+  border-radius: 14px;
+  background: rgba(255,255,255,.03);
+}
+
+/* Title + meta on a single line when possible */
+#panelEntities .list > div > div {
+  display: inline;           /* “Attacker A  Entries: …” stays on the same line */
+}
+
+/* Right-aligned buttons, same line, no wrapper needed */
+#panelEntities .list > div > button:nth-last-of-type(2) {
+  position: absolute;
+  top: 12px;
+  right: 96px;               /* positions the “Rename” button to the left of Delete */
+}
+#panelEntities .list > div > button:last-of-type {
+  position: absolute;
+  top: 12px;
+  right: 14px;               /* “Delete” button on the far right */
+}
+
+/* Small visual adjustments */
+#panelEntities .list > div > button {
+  margin: 0;                 /* removes vertical margin that added unnecessary spacing */
+}
