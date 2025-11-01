@@ -57,21 +57,8 @@
   <div class="panel" id="panelAssociations">
     <h3>Configuration & Exploration</h3>
 
-    <div class="row">
-      <div class="col">
-        <label>Attaquant courant</label>
-        <select id="selAttacker"></select>
-      </div>
-      <div class="col speed-col">
-        <label for="simSpeed">Vitesse simulation</label>
-        <input id="simSpeed" type="range" min="0.2" max="3" step="0.1" value="1">
-        <span id="simSpeedValue">×1.0</span>
-      </div>
-    </div>
-
     <div class="row ceiling-row">
-      <label for="maxPaths">Limite de chemins</label>
-      <input type="number" id="maxPaths" min="100" value="2000">
+      <!-- (Vitesse simulation et Limite de chemins ont été déplacés vers le panneau de droite comme demandé) -->
     </div>
 
     <hr>
@@ -87,6 +74,21 @@
       <button id="btnSetEntries">Appliquer points d'entrée</button>
       <button id="btnClearEntries" class="ghost">Effacer sélection</button>
       <span id="entriesStatus" class="small">—</span>
+    </div>
+
+    <hr>
+
+    <!-- NEW: Exit points selection (just under entry points, as requested) -->
+    <h3>Point de sortie de l'attaquant</h3>
+    <div class="small">Sélectionne les éléments (cibles) qui serviront de points de sortie pour l'attaquant.</div>
+    <div class="row">
+      <!-- ce select doit être rempli côté JS avec la liste des cibles -->
+      <select id="selExitsAll" multiple size="6"></select>
+    </div>
+    <div class="row">
+      <button id="btnSetExits">Appliquer points de sortie</button>
+      <button id="btnClearExits" class="ghost">Effacer sélection</button>
+      <span id="exitsStatus" class="small">—</span>
     </div>
 
     <hr>
@@ -166,10 +168,27 @@
     <div id="results" class="path-list"></div>
   </div>
 
-  <!-- RIGHT PANEL — Tutorial + Diagram -->
+  <!-- RIGHT PANEL — Tutorial + Configuration + Diagram -->
   <div class="panel" id="panelDetailsRight">
     <h3>Tutoriel</h3>
     <ol id="tutorial" class="small"></ol>
+
+    <hr>
+
+    <!-- MOVED: Configuration (Vitesse simulation & Limite de chemins) -->
+    <h3>Configuration</h3>
+    <div class="row">
+      <div class="col speed-col">
+        <label for="simSpeed">Vitesse simulation</label>
+        <input id="simSpeed" type="range" min="0.2" max="3" step="0.1" value="1">
+        <span id="simSpeedValue">×1.0</span>
+      </div>
+    </div>
+
+    <div class="row ceiling-row">
+      <label for="maxPaths">Limite de chemins</label>
+      <input type="number" id="maxPaths" min="100" value="2000">
+    </div>
 
     <hr>
 
