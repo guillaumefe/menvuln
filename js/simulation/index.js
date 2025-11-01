@@ -1,48 +1,199 @@
 // js/simulation/index.js
-// Simulation core: registry + "mouse-like" gesture helpers.
+// Simulation core with “mouse-like” gestures + resilient scenario loading.
 
-const SCENARIOS = []; // { name, fn, weight }
+const SCENARIOS = []; // [{ name, fn, weight }]
 
-// -- registry
+// ---------------- Registry ----------------
 function addScenario(name, fn, weight = 1) {
   SCENARIOS.push({ name, fn, weight });
 }
+const registerScenario = addScenario;
+
 function pickScenario() {
-  const total = SCENARIOS.reduce((s, x) => s + (x.weight || 1), 0);
+  const total = SCENARIOS.reduce((s, x) => s + (x.weight ?? 1), 0);
   if (!total) return null;
   let r = Math.random() * total;
-  for (const s of SCENARIOS) { r -= (s.weight || 1); if (r <= 0) return s; }
+  for (const s of SCENARIOS) {
+    r -= (s.weight ?? 1);
+    if (r <= 0) return s;
+  }
   return SCENARIOS.at(-1) || null;
 }
 
-// -- “mouse” helpers
+// ---------------- Mouse-like helpers ----------------
 const $ = (id) => document.getElementById(id);
 const wait = (ms) => new Promise(res => setTimeout(res, ms));
-function ensureInView(n, block='center'){ try{ n?.scrollIntoView({behavior:'smooth', block}); }catch{} }
-function _move(el,x=8,y=8){ if(!el) return; const r=el.getBoundingClientRect(); const e=new MouseEvent('mousemove',{bubbles:true,clientX:r.left+x,clientY:r.top+y}); el.dispatchEvent(e); }
-async function moveToEl(el, offX=8, offY=8){ if(!el) return; ensureInView(el); await wait(120); _move(el,offX,offY); await wait(60); }
-async function click(el){ if(!el) return; await moveToEl(el); el.focus?.(); el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true})); el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true})); el.click?.(); await wait(80); }
-async function typeInto(input, text, perCharMs=12){ if(!input) return; await moveToEl(input,10,10); input.focus(); input.value=''; input.dispatchEvent(new Event('input',{bubbles:true})); for(const ch of String(text)){ input.value+=ch; input.dispatchEvent(new Event('input',{bubbles:true})); await wait(perCharMs);} }
-function selectByText(sel, text){ if(!sel) return; const t=String(text).toLowerCase(); for(const o of sel.options){ if(String(o.textContent||'').toLowerCase()===t){ sel.value=o.value; sel.dispatchEvent(new Event('change',{bubbles:true})); break; }} }
-function multiSelectByTexts(sel, texts){ if(!sel) return; const wants=new Set(texts.map(x=>String(x).toLowerCase())); for(const o of sel.options){ o.selected=wants.has(String(o.textContent||'').toLowerCase()); } sel.dispatchEvent(new Event('change',{bubbles:true})); }
+function ensureInView(node, block = 'center') {
+  try { node?.scrollIntoView({ behavior: 'smooth', block }); } catch {}
+}
 
-// -- top buttons
-function disableTopButtons(disabled=true){ ['btnSimu','btnFindPaths','btnExportODS','btnImportJSON','btnExportJSON'].forEach(id=>{ const b=$(id); if(b) b.disabled=disabled; }); }
-function enableTopButtons(){ disableTopButtons(false); }
+function _mouse(el, type, opts = {}) {
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const ev = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: r.left + (opts.offX ?? 8),
+    clientY: r.top + (opts.offY ?? 8)
+  });
+  el.dispatchEvent(ev);
+}
 
-// -- runner
-async function runScenarioObject(sc){ disableTopButtons(true); try{ await sc.fn({ g }); } catch(e){ console.error('[simulation] scenario failed:', e); } finally{ disableTopButtons(false); } }
-async function runRandomScenario(){ const sc=pickScenario(); if(!sc){ alert('No simulation scenarios registered.'); return; } await runScenarioObject(sc); }
-async function runScenario(name){ const sc=SCENARIOS.find(s=>s.name===name); if(!sc) throw new Error(`Scenario not found: ${name}`); await runScenarioObject(sc); }
-async function runSimulation(opts={}){ if(opts.scenarioName) await runScenario(opts.scenarioName); else await runRandomScenario(); if(typeof opts.renderCallback==='function'){ try{ opts.renderCallback(); }catch(e){ console.error(e); } } }
+async function moveToEl(el, offX = 8, offY = 8) {
+  if (!el) return;
+  ensureInView(el);
+  await wait(120);
+  _mouse(el, 'mousemove', { offX, offY });
+  await wait(60);
+}
 
-// -- public gesture surface
-const g = { el:$, wait, moveToEl, click, typeInto, selectByText, multiSelectByTexts, ensureInView, disableTopButtons };
+async function click(el) {
+  if (!el) return;
+  await moveToEl(el);
+  el.focus?.();
+  _mouse(el, 'mousedown');
+  _mouse(el, 'mouseup');
+  el.click?.();
+  await wait(80);
+}
 
-// -- exports (keep both names for compatibility)
+async function typeInto(input, text, perCharMs = 12) {
+  if (!input) return;
+  await moveToEl(input, 10, 10);
+  input.focus();
+  input.value = '';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  for (const ch of String(text)) {
+    input.value += ch;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(perCharMs);
+  }
+}
+
+function selectByText(sel, text) {
+  if (!sel) return;
+  const target = String(text).toLowerCase();
+  for (const o of sel.options) {
+    if (String(o.textContent || '').toLowerCase() === target) {
+      sel.value = o.value;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      break;
+    }
+  }
+}
+
+function multiSelectByTexts(sel, texts) {
+  if (!sel) return;
+  const want = new Set(texts.map(t => String(t).toLowerCase()));
+  for (const o of sel.options) {
+    o.selected = want.has(String(o.textContent || '').toLowerCase());
+  }
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+// ---------------- Top buttons ----------------
+function disableTopButtons(disabled = true) {
+  ['btnSimu', 'btnFindPaths', 'btnExportODS', 'btnImportJSON', 'btnExportJSON']
+    .forEach(id => { const b = $(id); if (b) b.disabled = disabled; });
+}
+function enableTopButtons() { disableTopButtons(false); }
+
+// ---------------- Lazy scenario loading ----------------
+let triedDynamicLoad = false;
+async function ensureScenariosLoadedOnce() {
+  if (SCENARIOS.length > 0) return;
+
+  // If main.js didn’t side-effect import scenarios.js, try dynamic import now.
+  if (!triedDynamicLoad) {
+    triedDynamicLoad = true;
+    try {
+      // Use URL to be safe in ESM.
+      await import(new URL('./scenarios.js', import.meta.url));
+    } catch (e) {
+      console.warn('[simulation] dynamic scenarios load failed:', e);
+    }
+  }
+
+  // If still nothing, install a minimal built-in fallback.
+  if (SCENARIOS.length === 0) {
+    console.warn('[simulation] no scenarios registered; installing fallback scenario.');
+    addScenario('Fallback Demo', async ({ g }) => {
+      // Create a minimal chain via the real UI.
+      await typeInto(g.el('targetName'), 'Host A');
+      await g.click(g.el('btnAddTarget'));
+
+      await typeInto(g.el('targetName'), 'Host B');
+      await g.click(g.el('btnAddTarget'));
+
+      // mark Host B as final (via left list row)
+      const rows = document.querySelectorAll('#targetList .item');
+      for (const r of rows) {
+        if ((r.textContent || '').includes('Host B')) {
+          const cb = r.querySelector('input[type="checkbox"]');
+          if (cb) { await moveToEl(cb); await click(cb); }
+          break;
+        }
+      }
+
+      // attacker
+      await typeInto(g.el('attackerName'), 'Demo Attacker');
+      await g.click(g.el('btnAddAttacker'));
+
+      // select attacker + entries
+      g.selectByText(g.el('selAttacker'), 'Demo Attacker');
+      g.multiSelectByTexts(g.el('selEntriesAll'), ['Host A']);
+      await g.wait(120);
+
+      // link A -> B (direct)
+      g.selectByText(g.el('linkSource'), 'Host A');
+      g.multiSelectByTexts(g.el('linkDest'), ['Host B']);
+      g.selectByText(g.el('linkType'), 'direct');
+      await g.click(g.el('btnAddLink'));
+
+      // compute
+      await g.moveToEl(g.el('btnFindPaths'));
+      await g.click(g.el('btnFindPaths'));
+    }, 1);
+  }
+}
+
+// ---------------- Runner ----------------
+const g = { el: $, wait, moveToEl, click, typeInto, selectByText, multiSelectByTexts, ensureInView, disableTopButtons };
+
+async function runScenarioObject(sc) {
+  disableTopButtons(true);
+  try { await sc.fn({ g }); }
+  catch (e) { console.error('[simulation] scenario failed:', e); }
+  finally { disableTopButtons(false); }
+}
+
+async function runRandomScenario() {
+  await ensureScenariosLoadedOnce();
+  const sc = pickScenario();
+  if (!sc) { alert('No simulation scenarios registered.'); return; }
+  await runScenarioObject(sc);
+}
+
+async function runScenario(name) {
+  await ensureScenariosLoadedOnce();
+  const sc = SCENARIOS.find(s => s.name === name);
+  if (!sc) throw new Error(`Scenario not found: ${name}`);
+  await runScenarioObject(sc);
+}
+
+async function runSimulation(opts = {}) {
+  if (opts.scenarioName) await runScenario(opts.scenarioName);
+  else await runRandomScenario();
+
+  if (typeof opts.renderCallback === 'function') {
+    try { opts.renderCallback(); } catch (e) { console.error(e); }
+  }
+}
+
+// ---------------- Exports ----------------
 export {
-  addScenario,                 // <— for scenarios.js that imports addScenario
-  addScenario as registerScenario,
+  addScenario,
+  registerScenario,
   runSimulation,
   runRandomScenario,
   runScenario,
@@ -50,7 +201,13 @@ export {
   SCENARIOS,
   disableTopButtons,
   enableTopButtons,
-  g,
+  g
 };
 
-export default { registerScenario:addScenario, runSimulation, disableTopButtons, enableTopButtons, g };
+export default {
+  registerScenario: addScenario,
+  runSimulation,
+  disableTopButtons,
+  enableTopButtons,
+  g
+};
