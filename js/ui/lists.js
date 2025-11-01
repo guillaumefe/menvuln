@@ -30,6 +30,11 @@ function mini(text){
   return d;
 }
 
+function emitStateChanged() {
+  try { saveToLocal(State); } catch(e) { console.warn('save failed', e); }
+  document.dispatchEvent(new CustomEvent('state:changed'));
+}
+
 /* ---- RENDER ATTACKERS ---- */
 export function renderAttackers(){
   const container = el('attackerList');
@@ -43,8 +48,9 @@ export function renderAttackers(){
     const left = document.createElement('div');
     left.className = 'left';
 
+    const entries = a.entries instanceof Set ? a.entries : new Set(a.entries || []);
     left.appendChild(badge(a.name));
-    left.appendChild(mini(`Entries: ${[...a.entries].map(id => {
+    left.appendChild(mini(`Entries: ${[...entries].map(id => {
       const t = State.targets.find(x => x.id === id);
       return t ? t.name : '?';
     }).join(', ') || '—'}`));
@@ -55,14 +61,14 @@ export function renderAttackers(){
       const name = prompt('Rename attacker', a.name);
       if(!name) return;
       a.name = name;
-      saveToLocal(State);
+      emitStateChanged();
       renderAllLists();
     });
 
     const btnDel = createButton('Delete', () => {
       if(confirm('Delete attacker?')){
         deleteAttacker(a.id);
-        saveToLocal(State);
+        emitStateChanged();
         renderAllLists();
       }
     }, true);
@@ -92,14 +98,17 @@ export function renderTargets(){
     cb.title = 'Mark as final (goal)';
     cb.onchange = () => {
       t.final = cb.checked;
-      saveToLocal(State);
+      emitStateChanged();
       renderLinksInspector();
+      hydrateDetailsPanel();
     };
 
     left.append(cb);
     left.append(badge(t.name));
+
+    const vulnsSet = t.vulns instanceof Set ? t.vulns : new Set(t.vulns || []);
     left.append(mini(`Vulns: ${
-      [...t.vulns].map(id => State.vulns.find(v => v.id === id)?.name || '?').join(', ') || '—'
+      [...vulnsSet].map(id => State.vulns.find(v => v.id === id)?.name || '?').join(', ') || '—'
     }`));
 
     const right = document.createElement('div');
@@ -108,14 +117,14 @@ export function renderTargets(){
       const name = prompt('Rename target', t.name);
       if(!name) return;
       t.name = name;
-      saveToLocal(State);
+      emitStateChanged();
       renderAllLists();
     });
 
     const btnDel = createButton('Delete', () => {
       if(confirm('Delete target?')){
         deleteTarget(t.id);
-        saveToLocal(State);
+        emitStateChanged();
         renderAllLists();
         renderLinksInspector();
         renderResults([]); // clear paths if invalidated
@@ -146,7 +155,7 @@ export function renderVulns(){
     const btnDel = createButton('Delete', () => {
       if(confirm('Delete vulnerability?')){
         deleteVuln(v.id);
-        saveToLocal(State);
+        emitStateChanged();
         renderAllLists();
         hydrateDetailsPanel();
       }
