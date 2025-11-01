@@ -1,4 +1,6 @@
 // js/ui/lists.js
+// Utilities and renderers for side lists and central selectors.
+
 import { State, deleteAttacker, deleteTarget, deleteVuln } from '../state.js';
 import { saveToLocal } from '../storage.js';
 import { el } from '../helpers.js';
@@ -37,6 +39,10 @@ function emitStateChanged() {
 }
 
 /* ---- Select Utility for Dropdowns ---- */
+/**
+ * Populate a <select> element with options and optionally mark selected items.
+ * selected should be a Set of string values.
+ */
 export function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.name, selected = new Set() } = {}){
   if(!selectEl) return;
   const prev = selectEl.value;
@@ -45,7 +51,7 @@ export function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x
     const opt = document.createElement('option');
     opt.value = String(getValue(item));
     opt.textContent = String(getLabel(item));
-    if (selected.has(opt.value)) opt.selected = true;
+    if (selected && selected.has(String(opt.value))) opt.selected = true;
     selectEl.appendChild(opt);
   });
   if (prev && [...selectEl.options].some(o => o.value === prev)) {
