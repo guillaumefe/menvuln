@@ -1,4 +1,5 @@
-// Entry point for ENVULN adapted to latest UI layout (no legacy selectors)
+// js/main.js
+// Main UI and app logic
 
 import { el, norm } from './helpers.js';
 import * as StateMod from './state.js';
@@ -14,23 +15,17 @@ import { wireLinksUI } from './ui/links.js';
 import { computeAllPaths } from './paths.js';
 import { buildSVGForPath } from './diagram.js';
 import { exportODS } from './exportODS.js';
-
-// Simulation (mouse-driven)
 import {
   runSimulation,
   disableTopButtons,
   enableTopButtons
 } from './simulation/index.js';
-
-// Ensure scenarios are registered
 import './simulation/scenarios.js';
 
-/* -------------------------------------------------- */
 let lastResults = [];
 let lastMeta = { cycles: false, truncated: false };
 let lastDiagramSVG = null;
 
-/* Status display */
 function renderStatus(s){
   const sEl = el('status');
   if (sEl) sEl.textContent = s;
@@ -41,7 +36,6 @@ function emitStateChanged() {
   renderAllUI();
 }
 
-/* Option builder */
 function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.name, selectedSet = new Set() } = {}){
   if(!selectEl) return;
   const prev = selectEl.value;
@@ -58,8 +52,6 @@ function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.n
   }
 }
 
-/* -------------------------------------------------- */
-/* INITIALIZATION */
 async function init(){
   const loaded = loadFromLocal();
   if (loaded) StateMod.hydrate(loaded);
@@ -71,68 +63,52 @@ async function init(){
   wireAttackerSelection();
   wireEntries();
   wireExits();
-  wireVulnAssociations();
+  wireVulns();
   wireLinksUI();
   wireTopActions();
-
-  document.dispatchEvent(new CustomEvent('state:changed'));
 }
 
-/* -------------------------------------------------- */
-/* UI REFRESH */
 function renderAllUI(){
   renderAttackers(StateMod.State);
   renderTargets(StateMod.State);
   renderVulns(StateMod.State);
+  populateSelectors(StateMod.State);
 
-  populateSelectors(StateMod.State); // fills attacker + all target selectors for links
-
-  hydrateAttackerSelectors();
+  hydrateAttackerSelection();
   hydrateEntries();
   hydrateExits();
-  hydrateVulnElementsSelectors();
+  hydrateVulnSelectors();
 
   renderLinksInspector();
 }
 
-/* ---------- Attacker selection (center top) ---------- */
-function hydrateAttackerSelectors(state = StateMod.State){
-  const selAtt = el('selAttacker');
-  setOptions(selAtt, state.attackers || []);
+function hydrateAttackerSelection(state = StateMod.State){
+  setOptions(el('selAttacker'), state.attackers);
 }
 
-/* ---------- Entries ---------- */
 function hydrateEntries(state = StateMod.State){
   const selAtt = el('selAttacker');
   const sel = el('selEntriesAll');
   if (!selAtt || !sel) return;
-
-  const att = state.attackers.find(a => String(a.id) === selAtt.value);
-  const selected = att ? new Set([...att.entries].map(String)) : new Set();
-
+  const attacker = state.attackers.find(a => a.id === selAtt.value);
+  const selected = attacker ? new Set([...attacker.entries].map(String)) : new Set();
   setOptions(sel, state.targets, { selectedSet: selected });
 }
 
-/* ---------- Exits ---------- */
 function hydrateExits(state = StateMod.State){
   const selAtt = el('selAttacker');
   const sel = el('selExitsAll');
   if (!selAtt || !sel) return;
-
-  const att = state.attackers.find(a => String(a.id) === selAtt.value);
-  const selected = att ? new Set([...att.exits].map(String)) : new Set();
-
+  const attacker = state.attackers.find(a => a.id === selAtt.value);
+  const selected = attacker ? new Set([...attacker.exits].map(String)) : new Set();
   setOptions(sel, state.targets, { selectedSet: selected });
 }
 
-/* ---------- Vulnerability associations ---------- */
-function hydrateVulnElementsSelectors(state = StateMod.State){
+function hydrateVulnSelectors(state = StateMod.State){
   setOptions(el('selVulnElement'), state.targets);
   setOptions(el('selVulnsForElement'), state.vulns);
 }
 
-/* -------------------------------------------------- */
-/* WIRING */
 function wireAddControls(){
   el('btnAddAttacker').onclick = () => {
     const name = norm(el('attackerName').value);
@@ -145,7 +121,7 @@ function wireAddControls(){
   el('btnAddTarget').onclick = () => {
     const name = norm(el('targetName').value);
     if (!name) return;
-    const id = StateMod.createTarget(name, false);
+    const id = StateMod.createTarget(name);
     StateMod.ensureEdgeMaps(id);
     el('targetName').value = '';
     emitStateChanged();
@@ -160,64 +136,50 @@ function wireAddControls(){
   };
 }
 
-/* Attacker selector */
 function wireAttackerSelection(){
-  const sel = el('selAttacker');
-  if (sel) sel.addEventListener('change', () => {
+  el('selAttacker').addEventListener('change', () => {
     hydrateEntries();
     hydrateExits();
   });
 }
 
-/* Entry points */
 function wireEntries(){
-  const sel = el('selEntriesAll');
-  if (sel) sel.addEventListener('change', () => {
+  el('selEntriesAll').addEventListener('change', () => {
     const attId = el('selAttacker').value;
-    const ids = [...sel.selectedOptions].map(o => o.value);
+    const ids = [...el('selEntriesAll').selectedOptions].map(o => o.value);
     StateMod.setAttackerEntries(attId, ids);
     emitStateChanged();
   });
 }
 
-/* Exit points */
 function wireExits(){
-  const sel = el('selExitsAll');
-  if (sel) sel.addEventListener('change', () => {
+  el('selExitsAll').addEventListener('change', () => {
     const attId = el('selAttacker').value;
-    const ids = [...sel.selectedOptions].map(o => o.value);
+    const ids = [...el('selExitsAll').selectedOptions].map(o => o.value);
     StateMod.setAttackerExits(attId, ids);
     emitStateChanged();
   });
 }
 
-/* Vulnerabilities */
-function wireVulnAssociations(){
+function wireVulns(){
   el('btnAttachVulns').onclick = () => {
-    const tid = el('selVulnElement').value;
+    const targetId = el('selVulnElement').value;
     const vids = [...el('selVulnsForElement').selectedOptions].map(o => o.value);
-    if (!tid || !vids.length) return;
-
-    vids.forEach(v => StateMod.toggleVulnOnTarget(tid, v, true));
+    vids.forEach(v => StateMod.toggleVulnOnTarget(targetId, v, true));
     emitStateChanged();
   };
 
   el('btnDetachVulns').onclick = () => {
-    const tid = el('selVulnElement').value;
+    const targetId = el('selVulnElement').value;
     const vids = [...el('selVulnsForElement').selectedOptions].map(o => o.value);
-    if (!tid || !vids.length) return;
-
-    vids.forEach(v => StateMod.toggleVulnOnTarget(tid, v, false));
+    vids.forEach(v => StateMod.toggleVulnOnTarget(targetId, v, false));
     emitStateChanged();
   };
 }
 
-/* -------------------------------------------------- */
-/* PATH FINDING + EXPORT + DIAGRAM */
 function renderResults(results){
   const cont = el('results');
   cont.innerHTML = '';
-
   if(!results.length){
     cont.innerHTML = '<div class="small">No paths.</div>';
     return;
@@ -265,5 +227,5 @@ function wireTopActions(){
   };
 }
 
-/* -------------------------------------------------- */
+window.__envuln_boot = { State: StateMod.State, computeAllPaths };
 init();
