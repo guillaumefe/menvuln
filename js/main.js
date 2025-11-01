@@ -27,6 +27,7 @@ import {
   simIsRunning, simIsPaused,
   simStepBack, simStepForward
 } from './simulation/index.js';
+import { clearLocal } from './storage.js';
 
 let lastResults = [];
 let lastMeta = { cycles: false, truncated: false };
@@ -64,6 +65,49 @@ function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.n
   if (prev && [...selectEl.options].some(o => o.value === prev)) {
     selectEl.value = prev;
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* UI helper                                                              */
+/* -------------------------------------------------------------------------- */
+function resetAllApp() {
+  try { if (typeof simStop === 'function') simStop(); } catch {}
+
+  const cur = document.getElementById('__sim_cursor');
+  if (cur) cur.remove();
+
+  // Reset in-memory state
+  StateMod.State.attackers = [];
+  StateMod.State.targets   = [];
+  StateMod.State.vulns     = [];
+  StateMod.State.edges     = { direct: {}, lateral: {}, contains: {} };
+
+  // Clear persisted storage
+  try { clearLocal(); } catch {}
+
+  // Reset cached results/meta
+  lastResults = [];
+  lastMeta = { cycles: false, truncated: false };
+
+  // Clear UI surfaces
+  const resultsEl = el('results');    if (resultsEl) resultsEl.innerHTML = '';
+  const diagram   = el('diagramBox'); if (diagram)   diagram.innerHTML = '<div class="small">Select a path → Diagram</div>';
+  const statusEl  = el('status');     if (statusEl)  statusEl.textContent = '—';
+  const svgSizeEl = el('svgSize');    if (svgSizeEl) svgSizeEl.textContent = '—';
+
+  // Clear input fields
+  const inAtt = el('attackerName'); if (inAtt) inAtt.value = '';
+  const inTar = el('targetName');   if (inTar) inTar.value = '';
+  const inVul = el('vulnName');     if (inVul) inVul.value = '';
+
+  // Grey/disable playback if you wired that helper
+  try { setPlaybackEnabled(false); } catch {}
+
+  // Re-render selection lists clean
+  renderAllUI();
+
+  // Reset playback cursor/index
+  try { playback_resetToStart(); } catch {}
 }
 
 /* -------------------------------------------------------------------------- */
@@ -312,6 +356,15 @@ function wireAddControls() {
     el('vulnName').value = '';
     emitStateChanged();
   };
+
+  const btnResetAll = el('btnResetAll');
+  if (btnResetAll) {
+    btnResetAll.onclick = () => {
+      if (confirm('This will erase all attackers, targets, vulnerabilities, links, results and local storage. Continue?')) {
+        resetAllApp();
+      }
+    };
+  }
 }
 
 /* -------------------------------------------------------------------------- */
