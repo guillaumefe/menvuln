@@ -17,6 +17,11 @@ import { computeAllPaths } from './paths.js';
 import { buildSVGForPath } from './diagram.js';
 import { exportODS } from './exportODS.js';
 
+// ✅ extra initializers that were missing
+import { initEditors } from './ui/editors.js';
+import { wireLinksUI, populateLinkSelectors } from './ui/links.js';
+import { initResultsPanel } from './ui/results.js';
+
 // ✅ Now guaranteed to exist in simulation/index.js
 import {
   runSimulation,
@@ -27,7 +32,7 @@ import {
 
 /* ---------- Local runtime helpers ---------- */
 let lastResults = [];
-let lastMeta = { cycles: false };
+let lastMeta = { cycles: false, truncated: false };
 let lastDiagramSVG = null;
 
 function renderStatus(s){ const sEl = el('status'); if(sEl) sEl.textContent = s; }
@@ -53,6 +58,13 @@ async function init(){
   (StateMod.State.targets || []).forEach(t => StateMod.ensureEdgeMaps(t.id));
 
   renderAllUI();
+
+  // 🔧 wire missing behaviors
+  initEditors();            // editors panel (right)
+  wireLinksUI();            // add/remove links buttons & inspector delegation
+  initResultsPanel();       // results panel: refs + download hook
+  populateLinkSelectors();  // ensure linkSource/linkDest have options
+
   wireUI();
 }
 
@@ -76,7 +88,7 @@ function renderAllUI(){
 function filterOnlyVuln(results){
   const only = el('chkOnlyVuln')?.checked;
   if(!only) return results;
-  return results.filter(p => p.vulnsPerNode.every(v => v.length > 0));
+  return results.filter(p => Array.isArray(p.vulnsPerNode) && p.vulnsPerNode.every(v => v.length > 0));
 }
 
 function renderResultsView(results, meta){
@@ -92,9 +104,12 @@ function renderResultsView(results, meta){
     row.className = 'path';
     const left = document.createElement('div');
     left.className = 'left';
+
+    const attackerLabel = p.attackerName || p.attacker || p.attackerId || '—';
+
     left.innerHTML = `
-      <div><strong>${p.attacker}</strong></div>
-      <div class="small">${p.nodes.map(n => n.name).join(' → ')}</div>
+      <div><strong>${attackerLabel}</strong></div>
+      <div class="small">${(p.nodes || []).map(n => n.name).join(' → ')}</div>
     `;
     const right = document.createElement('div');
     const btn = document.createElement('button');
@@ -110,7 +125,7 @@ function renderResultsView(results, meta){
     row.appendChild(right);
     container.appendChild(row);
   });
-  renderStatus(`${results.length} paths${meta.cycles ? ' (cycles detected)' : ''}`);
+  renderStatus(`${results.length} paths${meta.cycles ? ' (cycles detected)' : ''}${meta.truncated ? ' (truncated)' : ''}`);
 }
 
 async function onComputePaths(){
@@ -121,8 +136,17 @@ async function onComputePaths(){
       includeContains: el('includeContains')?.checked,
       maxPaths: parseInt(el('maxPaths')?.value || '2000', 10)
     };
-    lastResults = computeAllPaths(StateMod.State, opts);
-    lastMeta = { cycles:false };
+
+    // computeAllPaths returns { paths, cycles, truncated }
+    const out = computeAllPaths(
+      StateMod.State,
+      { includeLateral: !!opts.includeLateral, includeContains: !!opts.includeContains },
+      opts.maxPaths
+    );
+
+    lastResults = out.paths || [];
+    lastMeta = { cycles: !!out.cycles, truncated: !!out.truncated };
+
     renderResultsView(filterOnlyVuln(lastResults), lastMeta);
   }catch(e){
     console.error(e);
