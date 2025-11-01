@@ -1,4 +1,4 @@
-// js/main.js — App bootstrap
+// js/main.js — App bootstrap (adapté)
 
 import { el } from './helpers.js';
 import * as StateMod from './state.js';
@@ -20,31 +20,53 @@ let lastResults = [];
 let lastMeta = { cycles: false, truncated: false };
 let lastDiagramSVG = null;
 
-function renderStatus(s) { const sEl = el('status'); if (sEl) sEl.textContent = s; }
-
-async function init() {
-  const loaded = loadFromLocal();
-  if (loaded) {
-    if (typeof StateMod.hydrate === 'function') {
-      StateMod.hydrate(loaded);
-    } else {
-      StateMod.State.version  = loaded.version || StateMod.State.version;
-      StateMod.State.vulns    = loaded.vulns || [];
-      StateMod.State.targets  = (loaded.targets || []).map(t => ({ id: t.id, name: t.name, vulns: new Set(t.vulns), final: !!t.final }));
-      StateMod.State.attackers= (loaded.attackers || []).map(a => ({ id: a.id, name: a.name, entries: new Set(a.entries) }));
-      StateMod.State.edges = {
-        direct:   convertEdge(loaded.edges?.direct),
-        lateral:  convertEdge(loaded.edges?.lateral),
-        contains: convertEdge(loaded.edges?.contains),
-      };
-    }
-  }
-  (StateMod.State.targets || []).forEach(t => StateMod.ensureEdgeMaps(t.id));
-  renderAllUI();
-  wireUI();
+function renderStatus(s) {
+  const sEl = el('status');
+  if (sEl) sEl.textContent = s || '';
 }
 
-function convertEdge(obj) { const out = {}; if (!obj) return out; for (const k in obj) out[k] = new Set(obj[k] || []); return out; }
+function safeInt(v, fallback, { min, max } = {}) {
+  let n = Number.parseInt(v, 10);
+  if (Number.isNaN(n)) n = fallback;
+  if (typeof min === 'number') n = Math.max(min, n);
+  if (typeof max === 'number') n = Math.min(max, n);
+  return n;
+}
+
+function convertEdge(obj) {
+  const out = {};
+  if (!obj) return out;
+  for (const k in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, k)) {
+      out[k] = new Set(obj[k] || []);
+    }
+  }
+  return out;
+}
+
+function initStateFromStorage() {
+  const loaded = loadFromLocal();
+  if (!loaded) return;
+
+  if (typeof StateMod.hydrate === 'function') {
+    StateMod.hydrate(loaded);
+    return;
+  }
+  // Fallback hydrate
+  StateMod.State.version = loaded.version || StateMod.State.version;
+  StateMod.State.vulns = loaded.vulns || [];
+  StateMod.State.targets = (loaded.targets || []).map(t => ({
+    id: t.id, name: t.name, vulns: new Set(t.vulns), final: !!t.final
+  }));
+  StateMod.State.attackers = (loaded.attackers || []).map(a => ({
+    id: a.id, name: a.name, entries: new Set(a.entries)
+  }));
+  StateMod.State.edges = {
+    direct:   convertEdge(loaded.edges?.direct),
+    lateral:  convertEdge(loaded.edges?.lateral),
+    contains: convertEdge(loaded.edges?.contains),
+  };
+}
 
 function renderAllUI() {
   renderAttackers(StateMod.State);
@@ -62,32 +84,68 @@ function filterOnlyVuln(results) {
   return results.filter(p => (p.vulnsPerNode || []).every(v => Array.isArray(v) && v.length > 0));
 }
 
+function makePathRow(p) {
+  const row = document.createElement('div');
+  row.className = 'path';
+
+  const left = document.createElement('div');
+  left.className = 'left';
+
+  // Attacker name
+  const attackerDiv = document.createElement('div');
+  const strong = document.createElement('strong');
+  strong.textContent = String(p.attackerName || p.attacker || '');
+  attackerDiv.appendChild(strong);
+
+  // Path nodes
+  const nodesDiv = document.createElement('div');
+  nodesDiv.className = 'small';
+  const pathText = (p.nodes || []).map(n => n?.name || '').join(' → ');
+  nodesDiv.textContent = pathText;
+
+  left.append(attackerDiv, nodesDiv);
+
+  const right = document.createElement('div');
+  const btn = document.createElement('button');
+  btn.className = 'ghost';
+  btn.type = 'button';
+  btn.textContent = 'Diagram';
+  btn.addEventListener('click', () => {
+    try {
+      lastDiagramSVG = buildSVGForPath(p, StateMod.State);
+      const box = el('diagramBox');
+      if (box) {
+        // Injection sûre : SVG généré par notre code
+        box.innerHTML = lastDiagramSVG;
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Diagram build error.');
+    }
+  });
+  right.appendChild(btn);
+
+  row.append(left, right);
+  return row;
+}
+
 function renderResultsView(results, meta) {
   const container = el('results');
-  container.innerHTML = '';
+  if (!container) return;
+
+  // Clear
+  while (container.firstChild) container.removeChild(container.firstChild);
+
   if (!results.length) {
-    container.innerHTML = `<div class="small">No paths.</div>`;
+    const empty = document.createElement('div');
+    empty.className = 'small';
+    empty.textContent = 'No paths.';
+    container.appendChild(empty);
     renderStatus('0 paths');
     return;
   }
 
-  results.forEach(p => {
-    const row = document.createElement('div'); row.className = 'path';
-    const left = document.createElement('div'); left.className = 'left';
-    left.innerHTML = `
-      <div><strong>${p.attackerName || p.attacker || ''}</strong></div>
-      <div class="small">${(p.nodes || []).map(n => n.name).join(' → ')}</div>
-    `;
-    const right = document.createElement('div');
-    const btn = document.createElement('button'); btn.className = 'ghost'; btn.textContent = 'Diagram';
-    btn.onclick = () => {
-      lastDiagramSVG = buildSVGForPath(p, StateMod.State);
-      const box = el('diagramBox'); if (box) box.innerHTML = lastDiagramSVG;
-    };
-    right.appendChild(btn);
-    row.append(left, right);
-    container.appendChild(row);
-  });
+  results.forEach(p => container.appendChild(makePathRow(p)));
 
   const parts = [`${results.length} paths`];
   if (meta.cycles) parts.push('(cycles detected)');
@@ -98,37 +156,60 @@ function renderResultsView(results, meta) {
 async function onComputePaths() {
   try {
     renderStatus('Computing…');
+
+    const maxPaths = safeInt(el('maxPaths')?.value || '2000', 2000, { min: 1, max: 100000 });
     const opts = {
-      includeLateral:  el('includeLateral')?.checked,
-      includeContains: el('includeContains')?.checked,
-      maxPaths: parseInt(el('maxPaths')?.value || '2000', 10)
+      includeLateral:  !!el('includeLateral')?.checked,
+      includeContains: !!el('includeContains')?.checked,
+      maxPaths
     };
-    const out = computeAllPaths(StateMod.State, opts, opts.maxPaths);
+
+    const out = computeAllPaths(StateMod.State, opts, maxPaths);
     lastResults = out.paths || [];
     lastMeta = { cycles: !!out.cycles, truncated: !!out.truncated };
+
     renderResultsView(filterOnlyVuln(lastResults), lastMeta);
     saveToLocal(StateMod.State);
   } catch (e) {
     console.error(e);
     alert('Path computation error.');
+    renderStatus('Error');
   }
 }
 
 function onExportODS() {
-  if (!lastResults.length) return alert('No paths to export.');
-  exportODS(lastResults, { state: StateMod.State });
+  if (!lastResults.length) {
+    alert('No paths to export.');
+    return;
+  }
+  try {
+    exportODS(lastResults, { state: StateMod.State });
+  } catch (e) {
+    console.error(e);
+    alert('Export error.');
+  }
 }
 
 function onDownloadSVG() {
-  if (!lastDiagramSVG) return alert('No diagram');
-  const blob = new Blob([lastDiagramSVG], { type: 'image/svg+xml' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `diagram.svg`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  if (!lastDiagramSVG) {
+    alert('No diagram');
+    return;
+  }
+  try {
+    const blob = new Blob([lastDiagramSVG], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'diagram.svg';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Révoque de façon sûre après le click
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  } catch (e) {
+    console.error(e);
+    alert('Download error.');
+  }
 }
 
 function wireUI() {
@@ -138,24 +219,39 @@ function wireUI() {
 
   const btnSimu = el('btnSimu');
   if (btnSimu) {
-    btnSimu.onclick = async () => {
+    btnSimu.addEventListener('click', async () => {
       try {
         disableTopButtons(true);
         btnSimu.textContent = 'Simulating…';
         btnSimu.disabled = true;
         await runSimulation({ renderCallback: () => renderAllUI() });
+      } catch (e) {
+        console.error(e);
+        alert('Simulation error.');
       } finally {
         btnSimu.textContent = 'Simulation';
         btnSimu.disabled = false;
         enableTopButtons(true);
         renderAllUI();
       }
-    };
+    });
   }
 
   el('chkOnlyVuln')?.addEventListener('change', () => {
     renderResultsView(filterOnlyVuln(lastResults), lastMeta);
   });
+}
+
+async function init() {
+  try {
+    initStateFromStorage();
+    (StateMod.State.targets || []).forEach(t => StateMod.ensureEdgeMaps(t.id));
+    renderAllUI();
+    wireUI();
+  } catch (e) {
+    console.error(e);
+    alert('Init error.');
+  }
 }
 
 window.__envuln_boot = { State: StateMod.State, computeAllPaths };
