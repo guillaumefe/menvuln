@@ -592,6 +592,8 @@ function resetForFreshSimulation() {
 
   renderAllUI();
   if (typeof playback_resetToStart === 'function') playback_resetToStart();
+  setPlaybackEnabled(false);
+  setPlayPauseVisual(false);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -794,20 +796,37 @@ function wirePlaybackControls() {
     };
   }
   if (btnStop) btnStop.onclick = () => {
-    if (typeof simIsRunning === 'function' && simIsRunning()) {
+    if (simIsRunning && simIsRunning()) {
       try { simStop(); } catch {}
-      setPlayPauseVisual(false);
-      setPlaybackEnabled(false);
+      resetForFreshSimulation();
       return;
     }
     playback_stop();
   };
-  if (btnRestart) btnRestart.onclick = () => {
-    if (typeof simIsRunning === 'function' && simIsRunning()) {
+  if (btnRestart) btnRestart.onclick = async () => {
+    if (simIsRunning && simIsRunning()) {
+      // 1) Wipe complet
       resetForFreshSimulation();
-      setPlaybackEnabled(true);
+      // 2) Relancer la simulation (mêmes signaux visuels que le bouton "Simulation")
+      try {
+        disableTopButtons(true);
+        setPlaybackEnabled(true);
+        setPlayPauseVisual(true);
+        const btn = el('btnSimu');
+        if (btn) { btn.textContent = 'Simulating…'; btn.disabled = true; }
+        await runSimulation({ renderCallback: () => renderAllUI() });
+      } finally {
+        const btn = el('btnSimu');
+        if (btn) { btn.textContent = 'Simulation'; btn.disabled = false; }
+        enableTopButtons();
+        setPlayPauseVisual(false);
+        setPlaybackEnabled(false);
+        renderAllUI();
+        playback_resetToStart?.();
+      }
       return;
     }
+    // si pas de simulation en cours : restart ne fait que relire le dataset
     playback_restart();
   };
   if (btnStepBack) btnStepBack.onclick = () => {
