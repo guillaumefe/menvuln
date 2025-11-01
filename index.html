@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -46,7 +46,7 @@
     <h3>Attaquants</h3>
     <div id="attackerList" class="list"></div>
 
-    <h3>Cibles</h3>
+    <h3>Cibles de l'attaquant</h3>
     <div id="targetList" class="list"></div>
 
     <h3>Vulnérabilités</h3>
@@ -76,23 +76,44 @@
 
     <hr>
 
-    <!-- Vulnerability association -->
-    <h3>Association des vulnérabilités</h3>
+    <!-- NEW: Entry points selection (before vuln association) -->
+    <h3>Point d'entrée de l'attaquant</h3>
+    <div class="small">Sélectionne les éléments (cibles) qui serviront de points d'entrée pour l'attaquant.</div>
+    <div class="row">
+      <!-- ce select doit être rempli côté JS avec la liste des cibles -->
+      <select id="selEntriesAll" multiple size="6"></select>
+    </div>
+    <div class="row">
+      <button id="btnSetEntries">Appliquer points d'entrée</button>
+      <button id="btnClearEntries" class="ghost">Effacer sélection</button>
+      <span id="entriesStatus" class="small">—</span>
+    </div>
+
+    <hr>
+
+    <!-- Vulnerability association (separate selector + vuln selection) -->
+    <h3>Vulnérabilités</h3>
+    <div class="small">Choisis un élément, puis sélectionne/désélectionne les vulnérabilités à lui associer.</div>
+
     <div class="row">
       <div class="col">
-        <label>Cible</label>
-        <select id="selTargetAssoc"></select>
+        <label>Élément à éditer</label>
+        <!-- selector permettant de choisir l'élément (ex : une cible) qui recevra les vulnérabilités -->
+        <select id="selVulnElement">
+          <!-- rempli par JS : options (targets, éventuellement attackers selon besoin) -->
+        </select>
       </div>
+
       <div class="col">
         <label>Vulnérabilités (multi)</label>
-        <select id="selVulnsAssoc" multiple size="6"></select>
+        <select id="selVulnsForElement" multiple size="6"></select>
       </div>
     </div>
 
     <div class="row">
-      <button id="btnAttachVulns">Associer</button>
-      <button id="btnDetachVulns" class="ghost">Dissocier</button>
-      <span class="small" id="assocStatus">Choisir une cible et des vulnérabilités.</span>
+      <button id="btnAttachVulns">Associer vulnérabilités</button>
+      <button id="btnDetachVulns" class="ghost">Dissocier vulnérabilités</button>
+      <span class="small" id="assocStatus">Sélectionnez un élément et des vulnérabilités.</span>
     </div>
 
     <hr>
