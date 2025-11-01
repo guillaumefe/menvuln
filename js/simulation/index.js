@@ -1,7 +1,7 @@
 // js/simulation/index.js
 // Simulation module: cursor-driven UI scenarios (client-side only, no server)
-// Exports: registerScenario(name, fn, weight), runSimulation(), runScenario(name),
-//          runRandomScenario(), disableTopButtons(), enableTopButtons(), pickScenario, SCENARIOS
+// Exports: registerScenario(name, fn, weight), runSimulation(opts?), runRandomScenario(), runScenario(name),
+//          disableTopButtons(disabled), enableTopButtons()
 
 const SCENARIOS = []; // { name, fn: async(), weight }
 
@@ -136,10 +136,9 @@ function disableTopButtons(disabled = true) {
   const ids = ['btnSimu', 'btnFindPaths', 'btnExportODS', 'btnExportJSON', 'btnImportJSON', 'btnAddLink', 'btnRemoveLink', 'btnAddTarget', 'btnAddAttacker', 'btnAddVuln'];
   ids.forEach(id => { const b = $(id); if (b) b.disabled = disabled; });
 }
-// Simple symmetric helper to match main.js usage
-function enableTopButtons(enable = true) {
-  disableTopButtons(!enable);
-}
+
+/* simple convenience counterpart used by main.js */
+function enableTopButtons() { disableTopButtons(false); }
 
 /* ---------------- Scenario helpers (idempotent helpers that use DOM) ---------------- */
 /*
@@ -151,13 +150,11 @@ function enableTopButtons(enable = true) {
 async function ensureTarget(name, finalFlag = false) {
   const sTarget = $('linkSource'); // presence check
   const targetSelect = $('linkDest') || $('selEntriesAll') || null;
-  // fast path: if any target option matches, select it in main target select (selEntriesAll)
   const entriesSelect = $('selEntriesAll');
   if (entriesSelect && selectByText(entriesSelect, name)) {
     if (finalFlag) await markTargetFinalByName(name);
     return true;
   }
-  // fallback: use the simple creation UI
   const tn = $('targetName');
   const addBtn = $('btnAddTarget');
   if (!tn || !addBtn) return false;
@@ -250,26 +247,30 @@ async function runScenario(name) {
   return runScenarioObj(s);
 }
 
-/* ---------------- convenience exports ---------------- */
-
-// Provide a simple runner API that main.js expects
-async function runSimulation({ stateModule, renderCallback } = {}) {
-  // Optionally use stateModule/renderCallback if needed by custom scenarios
-  await runRandomScenario();
-  if (typeof renderCallback === 'function') {
-    try { renderCallback(); } catch (e) { console.error(e); }
+/* A thin wrapper used by main.js. Accepts options but they’re optional.
+   - opts.scenarioName: run a specific scenario if provided; otherwise random.
+   - opts.renderCallback(): invoked after run to let caller refresh UI. */
+async function runSimulation(opts = {}) {
+  if (opts.scenarioName) {
+    await runScenario(opts.scenarioName);
+  } else {
+    await runRandomScenario();
+  }
+  if (typeof opts.renderCallback === 'function') {
+    try { opts.renderCallback(); } catch (e) { console.error(e); }
   }
 }
 
+/* ---------------- convenience exports ---------------- */
 export {
   addScenario as registerScenario,
-  runSimulation,
+  runSimulation,          // <- added
   runRandomScenario,
   runScenario,
   pickScenario,
   SCENARIOS,
-  disableTopButtons,
-  enableTopButtons
+  disableTopButtons,      // <- added
+  enableTopButtons        // <- added
 };
 
 /* ---------------- Example: register built-in simple scenarios (optional) ----------------
