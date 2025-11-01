@@ -10,9 +10,24 @@ export function registerScenario(name, fn, weight = 1) {
   SCENARIOS.push({ name, fn, weight: Math.max(0, +weight || 1) });
 }
 
+/* ---------------- Speed control ----------------
+   The speed slider in the UI controls all simulated waits
+   and cursor motions. Higher speed -> shorter waits. */
+function getSpeedMultiplier() {
+  const el = document.getElementById('simSpeed');
+  const v = el ? parseFloat(el.value) : 1;
+  // Clamp to the same min/max as the input
+  return Math.max(0.2, Math.min(3, Number.isFinite(v) ? v : 1));
+}
+
 /* ---------------- DOM helpers ---------------- */
 const $ = (id) => document.getElementById(id);
-const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+function sleep(ms) {
+  // Scale down delays when speed is higher, and vice-versa
+  const spd = getSpeedMultiplier();
+  const effective = Math.max(10, Math.floor(ms / spd));
+  return new Promise((res) => setTimeout(res, effective));
+}
 
 export function disableTopButtons(disabled = true) {
   [
@@ -65,7 +80,10 @@ async function moveToPoint(x, y, msPer100px = 120) {
   const dx = x - from.x, dy = y - from.y;
   const dist = Math.hypot(dx, dy) || 1;
   const steps = Math.max(10, Math.floor(dist / 10));
-  const dur = Math.max(80, Math.floor((dist / 100) * msPer100px));
+
+  // Scale total duration by speed (higher speed -> shorter)
+  const spd = getSpeedMultiplier();
+  const dur = Math.max(80, Math.floor((dist / 100) * msPer100px) / spd);
   const dt = dur / steps;
 
   for (let i = 1; i <= steps; i++) {
@@ -129,18 +147,13 @@ async function selectByText(selectEl, text) {
 
   for (const opt of options) {
     if (opt.textContent.toLowerCase() === target) {
-      // Open menu (real click)
       await click(selectEl);
-      await g.wait(120);
-
-      // Click matching option (real selection)
+      await sleep(120);
       opt.selected = true;
       opt.scrollIntoView({ block: 'center', behavior: 'smooth' });
       await click(opt);
-
-      // Trigger change properly
       selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-      await g.wait(120);
+      await sleep(120);
       return;
     }
   }
