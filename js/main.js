@@ -106,7 +106,25 @@ function resetAllApp() {
   lastMeta = { cycles: false, truncated: false };
 
   const resultsEl = el('results');    if (resultsEl) resultsEl.innerHTML = '';
-  const diagram   = el('diagramBox'); if (diagram)   diagram.innerHTML = '<div class="small">Select a path → Diagram</div>';
+  const diagram = el('diagramBox');
+  if (diagram) {
+    // Remove every trace: SVG, cursor, style width/height
+    diagram.innerHTML = '';
+    diagram.removeAttribute('style');
+    
+    const oldSvg = diagram.querySelector('svg');
+    if (oldSvg) oldSvg.remove();
+  
+    // Put placeholder back cleanly
+    const ph = document.createElement('div');
+    ph.className = 'small';
+    ph.textContent = 'Select a path → Diagram';
+    diagram.appendChild(ph);
+  }
+  
+  // Reset SVG size label
+  const svgSizeEl = el('svgSize');
+  if (svgSizeEl) svgSizeEl.textContent = '—';
   const statusEl  = el('status');     if (statusEl)  statusEl.textContent = '—';
   const svgSizeEl = el('svgSize');    if (svgSizeEl) svgSizeEl.textContent = '—';
 
@@ -660,7 +678,25 @@ function resetForFreshSimulation() {
   lastMeta = { cycles: false, truncated: false };
 
   const resultsEl = el('results');    if (resultsEl) resultsEl.innerHTML = '';
-  const diagram   = el('diagramBox'); if (diagram)   diagram.innerHTML = '<div class="small">Select a path → Diagram</div>';
+  const diagram = el('diagramBox');
+  if (diagram) {
+    // Remove every trace: SVG, cursor, style width/height
+    diagram.innerHTML = '';
+    diagram.removeAttribute('style');
+    
+    const oldSvg = diagram.querySelector('svg');
+    if (oldSvg) oldSvg.remove();
+  
+    // Put placeholder back cleanly
+    const ph = document.createElement('div');
+    ph.className = 'small';
+    ph.textContent = 'Select a path → Diagram';
+    diagram.appendChild(ph);
+  }
+  
+  // Reset SVG size label
+  const svgSizeEl = el('svgSize');
+  if (svgSizeEl) svgSizeEl.textContent = '—';
   const statusEl  = el('status');     if (statusEl)  statusEl.textContent = '—';
   const svgSizeEl = el('svgSize');    if (svgSizeEl) svgSizeEl.textContent = '—';
 
