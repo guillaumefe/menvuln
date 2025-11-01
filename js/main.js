@@ -1,6 +1,7 @@
 // js/main.js
-// Main UI and app logic. Immediate persistence on all relevant selectors.
-// Includes a playback controller that cycles through computed paths.
+// Main UI logic with immediate persistence and dual playback:
+// - dataset playback for computed paths (left/right navigation)
+// - simulation playback bridge (play/pause/stop/restart/step; speed control)
 
 import './simulation/scenarios.js';
 
@@ -23,7 +24,8 @@ import {
   disableTopButtons,
   enableTopButtons,
   simPlay, simPause, simToggle, simStop, simStep, simSetSpeed,
-  simIsRunning, simIsPaused
+  simIsRunning, simIsPaused,
+  simStepBack, simStepForward
 } from './simulation/index.js';
 
 let lastResults = [];
@@ -65,17 +67,24 @@ function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.n
 }
 
 /* -------------------------------------------------------------------------- */
-/* Playback                                                                   */
+/* Playback bridge to the simulation                                          */
 /* -------------------------------------------------------------------------- */
 function bridgeSimulationPlayback() {
   const btnPP = el('btnPlayPause');
   const btnStop = el('btnStop');
   const btnRestart = el('btnRestart');
+  const btnStepBack = el('btnStepBack');
   const btnStepForward = el('btnStepForward');
   const speed = el('simSpeed');
   const speedLabel = el('simSpeedValue');
 
-  // Speed → simulation (live)
+  const updateLabels = () => {
+    const running = simIsRunning();
+    const paused  = simIsPaused();
+    if (btnPP) btnPP.textContent = (running && !paused) ? 'Pause' : 'Play';
+  };
+
+  // speed → simulation
   if (speed) {
     const applySpeed = () => {
       const v = parseFloat(speed.value || '1') || 1;
@@ -86,69 +95,77 @@ function bridgeSimulationPlayback() {
     speed.addEventListener('input', applySpeed);
   }
 
-  // Play / Pause
+  // play/pause
   if (btnPP) {
     btnPP.addEventListener('click', async () => {
       if (!simIsRunning()) {
         simPlay();
+        updateLabels(); // should display "Pause"
         await runSimulation({ renderCallback: () => renderAllUI() });
+        updateLabels();
       } else {
         simToggle();
+        updateLabels();
       }
-      // Optionnel: rafraîchit l’état visuel si tu affiches un état
-      // (ta fonction playback_updateButtons reste intacte)
     });
   }
 
-  // Stop
+  // stop: fully stop and hide cursor (handled in simStop)
   if (btnStop) {
     btnStop.addEventListener('click', () => {
       if (simIsRunning()) simStop();
+      updateLabels(); // back to Play
     });
   }
 
-  // Restart
+  // restart: stop then start fresh
   if (btnRestart) {
     btnRestart.addEventListener('click', async () => {
       if (simIsRunning()) simStop();
       setTimeout(async () => {
         simPlay();
+        updateLabels();
         await runSimulation({ renderCallback: () => renderAllUI() });
+        updateLabels();
       }, 60);
     });
   }
 
-  // Step forward (pas de time-travel; step back est laissé tel quel)
-  if (btnStepForward) {
-    btnStepForward.addEventListener('click', () => {
-      if (!simIsRunning()) {
-        // Démarre en pause, puis laisse passer un "pas"
-        simPause();
-        runSimulation({ renderCallback: () => renderAllUI() }).then(() => {/* noop */});
-        setTimeout(() => simStep(), 40);
-      } else {
-        if (!simIsPaused()) simPause();
-        simStep();
-      }
+  // step back/forward: move the cursor a few timeline ticks and remain paused
+  if (btnStepBack) {
+    btnStepBack.addEventListener('click', () => {
+      simStepBack(10);
+      if (btnPP) btnPP.textContent = 'Play';
     });
   }
+  if (btnStepForward) {
+    btnStepForward.addEventListener('click', () => {
+      simStepForward(10);
+      if (btnPP) btnPP.textContent = 'Play';
+    });
+  }
+
+  updateLabels();
 }
 
+/* -------------------------------------------------------------------------- */
+/* Shim for scenario link buttons (works even if buttons are not in the DOM)  */
+/* -------------------------------------------------------------------------- */
 function ensureSimScenarioLinkButtons() {
   const byId = (id) => document.getElementById(id);
 
-  // Création si absent
+  // create hidden buttons if missing
   ['btnAddLink','btnRemoveLink'].forEach(id => {
     if (!byId(id)) {
       const b = document.createElement('button');
       b.id = id;
       b.type = 'button';
-      b.hidden = true; // invisible
+      b.hidden = true;
       document.body.appendChild(b);
     }
   });
 
-  // Handlers: lis la sélection et applique dans l’état
+  // handlers: read current UI selections and apply state changes
   const btnAdd = byId('btnAddLink');
   const btnDel = byId('btnRemoveLink');
 
@@ -164,7 +181,6 @@ function ensureSimScenarioLinkButtons() {
     const selectedTos = [...dstSel.selectedOptions].map(o => o.value);
     if (!selectedTos.length) return;
 
-    // Utilise les helpers existants de state.js via StateMod.*
     selectedTos.forEach(to => {
       try {
         if (mode === 'add') {
@@ -176,7 +192,7 @@ function ensureSimScenarioLinkButtons() {
     });
 
     try { saveToLocal(StateMod.State); } catch {}
-    renderLinksInspector(); // garde l’inspecteur en phase
+    renderLinksInspector();
   };
 
   if (btnAdd) btnAdd.addEventListener('click', () => apply('add'));
@@ -201,8 +217,8 @@ async function init() {
   wireLinksUI();
   wireTopActions();
   wireSimulationButton();
-  wirePlaybackControls();
-  bridgeSimulationPlayback();
+  wirePlaybackControls();       // dataset playback
+  bridgeSimulationPlayback();   // simulation playback
   ensureSimScenarioLinkButtons();
 }
 
@@ -537,14 +553,8 @@ function wireSimulationButton() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Playback controller                                                        */
+/* Results playback (diagram paging)                                          */
 /* -------------------------------------------------------------------------- */
-
-/**
- * The playback controller advances through the currently displayed result set.
- * It shows the diagram for the active index and steps automatically when playing.
- * Speed is controlled by the Simulation speed slider.
- */
 const playback = {
   dataset: [],
   index: 0,
@@ -559,11 +569,9 @@ function playback_setDataset(results) {
   playback.index = 0;
   playback_updateButtons();
 }
-
 function playback_current() {
   return playback.dataset[playback.index] || null;
 }
-
 function playback_renderCurrent() {
   const p = playback_current();
   const box = el('diagramBox');
@@ -582,7 +590,6 @@ function playback_renderCurrent() {
     svgSizeEl.textContent = `${Math.round(w)} × ${Math.round(h)} px`;
   }
 }
-
 function playback_updateButtons() {
   const hasData = playback.dataset.length > 0;
   const btnPP = el('btnPlayPause');
@@ -596,7 +603,6 @@ function playback_updateButtons() {
   });
   if (btnPP) btnPP.textContent = playback.playing ? 'Pause' : 'Play';
 }
-
 function playback_tick() {
   if (!playback.playing) return;
   const delay = Math.max(200, Math.floor(playback.baseDelayMs / Math.max(0.2, playback.speed)));
@@ -606,65 +612,54 @@ function playback_tick() {
     if (playback.playing) playback_tick();
   }, delay);
 }
-
 function playback_play() {
   if (!playback.dataset.length) return;
   playback.playing = true;
   playback_updateButtons();
   playback_tick();
 }
-
 function playback_pause() {
   playback.playing = false;
   clearTimeout(playback.timer);
   playback_updateButtons();
 }
-
 function playback_stop() {
   playback_pause();
   playback.index = 0;
   playback_renderCurrent();
 }
-
 function playback_restart() {
   playback.index = 0;
   playback_renderCurrent();
   if (playback.playing) playback_tick();
 }
-
 function playback_stepForward() {
   if (!playback.dataset.length) return;
   playback.index = (playback.index + 1) % playback.dataset.length;
   playback_renderCurrent();
 }
-
 function playback_stepBack() {
   if (!playback.dataset.length) return;
   playback.index = (playback.index - 1 + playback.dataset.length) % playback.dataset.length;
   playback_renderCurrent();
 }
-
 function playback_setSpeed(mult) {
   playback.speed = Math.max(0.2, Math.min(3, +mult || 1));
   const lab = el('simSpeedValue');
   if (lab) lab.textContent = `×${playback.speed.toFixed(1)}`;
   if (playback.playing) playback_tick();
 }
-
 function playback_resetToStart() {
   playback_pause();
   playback.index = 0;
   playback_renderCurrent();
 }
-
 function playback_showIndex(idx, pauseAfter = false) {
   if (!playback.dataset.length) return;
   playback.index = Math.max(0, Math.min(playback.dataset.length - 1, idx));
   playback_renderCurrent();
   if (pauseAfter) playback_pause();
 }
-
-/* If there are no results yet, Play can trigger a compute then start */
 function playback_computeIfNeededAndStart() {
   if (playback.dataset.length > 0) {
     playback_play();
@@ -696,7 +691,9 @@ function playback_computeIfNeededAndStart() {
   }
 }
 
-/* Wire page controls */
+/* -------------------------------------------------------------------------- */
+/* Wire dataset playback controls                                             */
+/* -------------------------------------------------------------------------- */
 function wirePlaybackControls() {
   const btnPP = el('btnPlayPause');
   const btnStop = el('btnStop');
@@ -733,7 +730,9 @@ function wirePlaybackControls() {
   playback_renderCurrent();
 }
 
-/* Convenience export if needed elsewhere */
+/* -------------------------------------------------------------------------- */
+/* Convenience export if needed elsewhere                                     */
+/* -------------------------------------------------------------------------- */
 function playback_setExternalResults(results) {
   playback_setDataset(results);
   playback_resetToStart();
