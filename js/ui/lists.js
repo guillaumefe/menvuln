@@ -4,7 +4,7 @@ import { saveToLocal } from '../storage.js';
 import { el } from '../helpers.js';
 
 // keep this as a named import; editors.js should export hydrateDetailsPanel
-import { hydrateDetailsPanel } from './editors.js'; 
+import { hydrateDetailsPanel } from './editors.js';
 import { renderLinksInspector as _renderLinksInspector } from './links.js';
 import { renderResults } from './results.js';
 
@@ -41,7 +41,7 @@ function setOptions(selectEl, items, { getValue = x => x.id, getLabel = x => x.n
   if(!selectEl) return;
   const prev = selectEl.value;
   selectEl.innerHTML = '';
-  items.forEach(item => {
+  (items || []).forEach(item => {
     const opt = document.createElement('option');
     opt.value = String(getValue(item));
     opt.textContent = String(getLabel(item));
@@ -97,7 +97,7 @@ export function renderAttackers(){
   });
 }
 
-/* ---- RENDER TARGETS (checkbox removed) ---- */
+/* ---- RENDER TARGETS ---- */
 export function renderTargets(){
   const container = el('targetList');
   if(!container) return;
@@ -133,7 +133,7 @@ export function renderTargets(){
         emitStateChanged();
         renderAllLists();
         renderLinksInspector();
-        renderResults([]); 
+        renderResults([]);
       }
     }, true);
 
