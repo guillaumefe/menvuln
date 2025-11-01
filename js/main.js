@@ -4,14 +4,26 @@
 import { el, norm } from './helpers.js';
 import * as StateMod from './state.js';
 import { saveToLocal, loadFromLocal } from './storage.js';
-
-// Use a namespace import so we can optionally call a wrapper if some exports are missing
-import * as Lists from './ui/lists.js';
-
+import {
+  renderAttackers,
+  renderTargets,
+  renderVulns,
+  populateSelectors,
+  hydrateEntriesSelect,
+  renderLinksInspector,
+  renderDetailsPanel,   // <- must exist as a named export in ./ui/lists.js
+} from './ui/lists.js';
 import { computeAllPaths } from './paths.js';
 import { buildSVGForPath } from './diagram.js';
 import { exportODS } from './exportODS.js';
-import { runSimulation, registerScenario, disableTopButtons, enableTopButtons } from './simulation/index.js';
+
+// NOTE: these are now exported by ./simulation/index.js
+import {
+  runSimulation,
+  registerScenario,
+  disableTopButtons,
+  enableTopButtons
+} from './simulation/index.js';
 
 /* ---------- Local runtime helpers ---------- */
 let lastResults = [];   // raw results from computeAllPaths()
@@ -59,32 +71,13 @@ function toSetObj(obj){
 
 /* ---------- UI render orchestration ---------- */
 function renderAllUI(){
-  // Use functions from Lists (namespace import)
-  Lists.renderAttackers?.(StateMod.State);
-  Lists.renderTargets?.(StateMod.State);
-  Lists.renderVulns?.(StateMod.State);
-  Lists.populateSelectors?.(StateMod.State);
-  Lists.hydrateEntriesSelect?.();
-  Lists.renderLinksInspector?.();
-
-  // Safe wrapper: prefer Lists.renderDetailsPanel if it exists,
-  // otherwise call window.editors.hydrateDetailsPanel if available.
-  try {
-    if (typeof Lists.renderDetailsPanel === 'function') {
-      Lists.renderDetailsPanel(StateMod.State);
-    } else {
-      const editors =
-        (typeof window !== 'undefined' && window.editors) ||
-        (StateMod && StateMod.editors) ||
-        null;
-
-      if (editors && typeof editors.hydrateDetailsPanel === 'function') {
-        editors.hydrateDetailsPanel(StateMod.State);
-      }
-    }
-  } catch (e) {
-    console.warn('Details panel render skipped (no implementation found).', e);
-  }
+  renderAttackers(StateMod.State);
+  renderTargets(StateMod.State);
+  renderVulns(StateMod.State);
+  populateSelectors(StateMod.State);
+  hydrateEntriesSelect();
+  renderLinksInspector();
+  renderDetailsPanel(); // <- calls the wrapper which invokes editors.hydrateDetailsPanel()
 }
 
 /* ---------- compute / render results ---------- */
@@ -260,7 +253,7 @@ function wireUI(){
   const selAttacker = el('selAttacker');
   const selEntriesAll = el('selEntriesAll');
   if(selAttacker && selEntriesAll){
-    selAttacker.onchange = () => Lists.hydrateEntriesSelect?.(); 
+    selAttacker.onchange = () => hydrateEntriesSelect(); 
     selEntriesAll.onchange = () => {
       const aid = selAttacker.value;
       if(!aid) return;
@@ -298,7 +291,7 @@ function wireUI(){
   }
 
   const linkSource = el('linkSource');
-  if(linkSource) linkSource.onchange = () => Lists.renderLinksInspector?.();
+  if(linkSource) linkSource.onchange = () => renderLinksInspector();
 
   // compute / results
   const btnFindPaths = el('btnFindPaths');
