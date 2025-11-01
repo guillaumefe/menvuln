@@ -8,9 +8,13 @@ import { uid } from './helpers.js';
 export const State = {
   version: 4,
 
-  attackers: [],   // { id, name, entries:Set<targetId> }
-  targets: [],     // { id, name, vulns:Set<vulnId>, final:boolean }
-  vulns: [],       // { id, name }
+  // attackers: add exits alongside entries
+  // { id, name, entries:Set<targetId>, exits:Set<targetId> }
+  attackers: [],
+  // targets: { id, name, vulns:Set<vulnId>, final:boolean }
+  targets: [],
+  // vulns:   { id, name }
+  vulns: [],
 
   edges: {
     direct: {},    // key:sourceId -> Set<destId>
@@ -40,7 +44,7 @@ export function createAttacker(name){
   if(uniqueNameExists(State.attackers, name)) throw new Error('Attacker exists');
 
   const id = uid();
-  State.attackers.push({ id, name, entries:new Set() });
+  State.attackers.push({ id, name, entries:new Set(), exits:new Set() });
   return id;
 }
 
@@ -90,12 +94,15 @@ export function setTargetFinal(id, val){
 export function deleteTarget(id){
   State.targets = State.targets.filter(t=>t.id!==id);
 
-  // clean edges & entries
+  // clean edges & entries/exits
   for(const m of Object.values(State.edges)){
     delete m[id];
     for(const k in m) m[k].delete(id);
   }
-  State.attackers.forEach(a => a.entries.delete(id));
+  State.attackers.forEach(a => {
+    a.entries?.delete(id);
+    a.exits?.delete(id);
+  });
 }
 
 /* ----------------- Vulnerabilities CRUD ------------------ */
@@ -117,15 +124,22 @@ export function deleteVuln(id){
 export function toggleVulnOnTarget(targetId, vulnId, enable){
   const t = State.targets.find(x=>x.id===targetId);
   if(!t) throw new Error('Unknown target');
+  if(!(t.vulns instanceof Set)) t.vulns = new Set(t.vulns || []);
   if(enable) t.vulns.add(vulnId); else t.vulns.delete(vulnId);
 }
 
-/* ----------------- Entries (attacker → entry targets) ------------------ */
+/* ----------------- Entries/Exits (attacker) ------------------ */
 
 export function setAttackerEntries(attackerId, entryIds){
   const a = State.attackers.find(x=>x.id===attackerId);
   if(!a) throw new Error('Unknown attacker');
   a.entries = new Set(entryIds);
+}
+
+export function setAttackerExits(attackerId, exitIds){
+  const a = State.attackers.find(x=>x.id===attackerId);
+  if(!a) throw new Error('Unknown attacker');
+  a.exits = new Set(exitIds);
 }
 
 /* ----------------- Graph edges ------------------ */
