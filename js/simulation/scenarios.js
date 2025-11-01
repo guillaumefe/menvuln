@@ -1,312 +1,299 @@
-// js/simulation/scenarios.js
-//
-// Real-user-style simulation scenarios:
-// • interacts only through visible UI controls (Add, Remove, Compute, Diagram…)
-// • waits for selects to be hydrated before operating
-// • key-by-key typing using simulated keyboard events
-// • avoids clicking lists (#targetList #attackerList #vulnList)
-// • prevents “destination required” alerts
-//
-// Depends on the gesture API `g` provided by simulation/index.js
+// js/simulation/index.js
+// Simulation engine: mouse-driven, human-like behavior
 
-import { registerScenario as addScenario, g } from "./index.js";
+/* =====================================================
+   Scenario registry
+   ===================================================== */
 
-/* ──────────────────────────────
-   General Simulation Helpers
-   ────────────────────────────── */
+const SCENARIOS = [];
 
-async function clickButton(id) {
-  const b = g.el(id);
-  if (!b) throw new Error(`Button not found: #${id}`);
-  await g.ensureInView(b, "center");
-  await g.moveToEl(b, 0, +6);
-  await g.click(b);
+export function registerScenario(name, fn, weight = 1) {
+  SCENARIOS.push({ name, fn, weight });
 }
 
-async function typeAndClick(inputId, btnId, text) {
-  const input = g.el(inputId);
-  if (!input) throw new Error(`Input not found: #${inputId}`);
-  await g.ensureInView(input, "center");
-  await g.moveToEl(input);
-  await g.typeInto(input, text, 14);
-  await clickButton(btnId);
-}
+export async function runScenario(name, opts = {}) {
+  const sc = SCENARIOS.find(s => s.name === name);
+  if (!sc) throw new Error(`Scenario not found: ${name}`);
+  disableTopButtons(true);
 
-async function waitForOptions(selector, minCount = 1, timeoutMs = 3000) {
-  const started = Date.now();
-  for (;;) {
-    const sel = document.querySelector(selector);
-    if (sel && sel.options.length >= minCount) return;
-    if (Date.now() - started > timeoutMs) {
-      console.warn("[sim] timeout waiting options for", selector);
-      return;
-    }
-    await g.wait(60);
-  }
-}
-
-function safeSelectByText(selectEl, text) {
   try {
-    g.selectByText(selectEl, text);
-  } catch {}
-}
-
-function safeMultiSelectByTexts(selectEl, texts) {
-  try {
-    g.multiSelectByTexts(selectEl, texts);
-  } catch {}
-}
-
-function findFinalCheckboxByLabel(label) {
-  const rows = document.querySelectorAll("#targetList .item");
-  for (const row of rows) {
-    if (row.textContent && row.textContent.includes(label)) {
-      const cb = row.querySelector('input[type="checkbox"]');
-      if (cb) return cb;
-    }
-  }
-  return null;
-}
-
-/* ──────────────────────────────
-   UI Interaction Building Blocks
-   ────────────────────────────── */
-
-async function addTargetQuick(name) {
-  await typeAndClick("targetName", "btnAddTarget", name);
-  await waitForOptions("#linkSource", 1);
-  await waitForOptions("#linkDest", 1);
-  await g.wait(80);
-}
-
-async function addAttackerQuick(name) {
-  await typeAndClick("attackerName", "btnAddAttacker", name);
-  await waitForOptions("#selAttacker", 1);
-  await g.wait(80);
-}
-
-async function setEntries(attackerLabel, entriesLabels) {
-  const selAtt = g.el("selAttacker");
-  await g.ensureInView(selAtt, "center");
-  await g.moveToEl(selAtt);
-  safeSelectByText(selAtt, attackerLabel);
-
-  const selEntries = g.el("selEntriesAll");
-  await waitForOptions("#selEntriesAll", 1);
-  await g.moveToEl(selEntries);
-  safeMultiSelectByTexts(selEntries, entriesLabels);
-
-  await g.wait(120);
-}
-
-async function addLink(type, fromLabel, toLabels) {
-  await waitForOptions("#linkSource", 1);
-  await waitForOptions("#linkDest", 1);
-
-  const srcSel = g.el("linkSource");
-  const dstSel = g.el("linkDest");
-  const typeSel = g.el("linkType");
-
-  await g.ensureInView(srcSel, "center");
-  safeSelectByText(srcSel, fromLabel);
-
-  await g.ensureInView(dstSel, "center");
-  [...dstSel.options].forEach((o) => (o.selected = false));
-  safeMultiSelectByTexts(dstSel, toLabels);
-
-  await g.ensureInView(typeSel, "center");
-  safeSelectByText(typeSel, type);
-
-  const selectedCount = [...dstSel.options].filter((o) => o.selected).length;
-  if (!selectedCount) {
-    console.warn("[sim] no destination selected; retrying");
-    safeMultiSelectByTexts(dstSel, toLabels);
-  }
-
-  await clickButton("btnAddLink");
-  await g.wait(100);
-}
-
-async function toggleFinal(labelText) {
-  const cb = findFinalCheckboxByLabel(labelText);
-  if (cb && !cb.checked) {
-    await g.ensureInView(cb, "center");
-    await g.moveToEl(cb);
-    await g.click(cb);
+    await sc.fn(opts);
+    if (opts.renderCallback) opts.renderCallback();
+  } catch (err) {
+    console.error('[simulation] scenario error', err);
+  } finally {
+    disableTopButtons(false);
   }
 }
 
-async function computeAndOpenFirstDiagram() {
-  await clickButton("btnFindPaths");
-  await g.wait(250);
-  const firstDiagramBtn = document.querySelector("#results .path button");
-  if (firstDiagramBtn) {
-    await g.ensureInView(firstDiagramBtn, "center");
-    await g.moveToEl(firstDiagramBtn);
-    await g.click(firstDiagramBtn);
+export const runRandomScenario = async () => {
+  const tot = SCENARIOS.reduce((s,x)=>s+(x.weight||1),0);
+  let r = Math.random() * tot;
+  for(const s of SCENARIOS){
+    r -= (s.weight||1);
+    if(r<=0) return runScenario(s.name);
+  }
+  return runScenario(SCENARIOS[0]?.name);
+};
+
+export async function runSimulation(opts = {}) {
+  return runRandomScenario();
+}
+
+export { SCENARIOS };
+
+/* =====================================================
+   Disable top buttons (only global actions)
+   ===================================================== */
+
+function $(id){ return document.getElementById(id); }
+
+export function disableTopButtons(disabled = true) {
+  [
+    'btnSimu',
+    'btnFindPaths',
+    'btnExportODS',
+    'btnAddLink',
+    'btnRemoveLink',
+    'btnImportJSON',
+    'btnExportJSON',
+    'btnDownloadSVG'
+  ].forEach(id=>{
+    const b = $(id);
+    if(b) b.disabled = disabled;
+  });
+}
+
+export function enableTopButtons(){ disableTopButtons(false); }
+
+/* =====================================================
+   Gesture engine: cursor + events
+   ===================================================== */
+
+const g = {
+  el: (id)=>$(id),
+  wait,
+  moveToEl,
+  click,
+  dblclick,
+  typeInto,
+  selectByText,
+  multiSelectByTexts,
+  ensureInView,
+  disableTopButtons,
+  ensureSpeedHook
+};
+export { g };
+
+// Visual cursor
+let cursorNode = null;
+let cursorInit = false;
+
+function ensureCursor() {
+  if(cursorInit) return;
+  cursorInit = true;
+  cursorNode = document.createElement('div');
+  cursorNode.id='envuln-sim-cursor';
+  Object.assign(cursorNode.style,{
+    position:'fixed',
+    width:'12px',
+    height:'12px',
+    borderRadius:'50%',
+    background:'#7dd3fc',
+    boxShadow:'0 0 0 2px rgba(125,211,252,.35)',
+    zIndex:'99999',
+    pointerEvents:'none',
+    transition:'transform 0.08s ease'
+  });
+  document.body.appendChild(cursorNode);
+}
+
+function getSpeed(){
+  const s = $('simSpeed');
+  const v = parseFloat(s?.value||'1');
+  return Math.max(0.2, Math.min(3,v));
+}
+
+function ensureSpeedHook(){
+  const s=$('simSpeed'), span=$('simSpeedValue');
+  if(!s||!span) return;
+  const update=()=>{
+    span.textContent=`×${parseFloat(s.value).toFixed(1)}`;
+  };
+  if(!s._hooked){
+    s.addEventListener('input',update);
+    s._hooked=true;
+  }
+  update();
+}
+
+function wait(ms){
+  return new Promise(res => setTimeout(res, ms/getSpeed()));
+}
+
+/* =====================================================
+   List-click guard: avoid opening Details/editor
+   ===================================================== */
+
+function isInsideList(node){
+  return node && node.closest &&
+    (node.closest('#targetList')
+     || node.closest('#attackerList')
+     || node.closest('#vulnList'));
+}
+
+/* =====================================================
+   Mouse movement and events
+   ===================================================== */
+
+function centerOf(el){
+  const r = el.getBoundingClientRect();
+  return { x:r.left+r.width/2, y:r.top+r.height/2, rect:r };
+}
+
+async function moveCursorTo(x,y,ms=300){
+  ensureCursor();
+  ms = ms/getSpeed();
+  const r = cursorNode.getBoundingClientRect();
+  const x0 = r.left+6, y0 = r.top+6;
+  const frames = Math.max(10, Math.round(ms/16));
+  for(let i=0;i<=frames;i++){
+    const t=i/frames;
+    const nx=x0+(x-x0)*t;
+    const ny=y0+(y-y0)*t;
+    cursorNode.style.transform=`translate(${nx-6}px,${ny-6}px)`;
+    await wait(16);
   }
 }
 
-/* ──────────────────────────────
-   Simulation Scenarios
-   ────────────────────────────── */
+async function moveToEl(el,offsetX=0,offsetY=0,d=350){
+  if(!el) return;
+  ensureInView(el);
+  await wait(20);
+  const {x,y,rect}=centerOf(el);
 
-// 1) Simple direct access chain
-async function scenario_Web_DB_Console() {
-  g.disableTopButtons?.(true);
+  // If target is a list item → push cursor down
+  if(isInsideList(el)) offsetY+=35;
 
-  await addTargetQuick("Web Server DMZ");
-  await addTargetQuick("Database");
-  await addTargetQuick("Admin Console");
-  await toggleFinal("Admin Console");
-
-  await addAttackerQuick("APT Operator");
-  await setEntries("APT Operator", ["Web Server DMZ"]);
-
-  await addLink("direct", "Web Server DMZ", ["Database"]);
-  await addLink("direct", "Database", ["Admin Console"]);
-
-  await computeAndOpenFirstDiagram();
-  g.disableTopButtons?.(false);
+  await moveCursorTo(x+offsetX,y+offsetY,d+(rect.width+rect.height)*.1);
 }
 
-// 2) Phishing → Lateral movement → DC → Admin Console
-async function scenario_Phishing_Lateral() {
-  g.disableTopButtons?.(true);
-
-  await addTargetQuick("Email Gateway");
-  await addTargetQuick("User Workstation");
-  await addTargetQuick("Domain Controller");
-  await addTargetQuick("Admin Console");
-  await toggleFinal("Admin Console");
-
-  await addAttackerQuick("Phishing Campaign");
-  await setEntries("Phishing Campaign", ["Email Gateway"]);
-
-  await addLink("direct", "Email Gateway", ["User Workstation"]);
-  await addLink("lateral", "User Workstation", ["Domain Controller"]);
-  await addLink("direct", "Domain Controller", ["Admin Console"]);
-
-  await computeAndOpenFirstDiagram();
-  g.disableTopButtons?.(false);
+async function dispatchMouseSequence(el,type='click'){
+  const {x,y}=centerOf(el);
+  const ev = t => new MouseEvent(t,{
+    bubbles:true, cancelable:true,
+    clientX:x, clientY:y, view:window, button:0
+  });
+  el.dispatchEvent(ev('pointerover'));
+  el.dispatchEvent(ev('mouseover'));
+  el.dispatchEvent(ev('mouseenter'));
+  el.dispatchEvent(ev('pointerdown'));
+  el.dispatchEvent(ev('mousedown'));
+  el.focus?.();
+  el.dispatchEvent(ev('pointerup'));
+  el.dispatchEvent(ev('mouseup'));
+  el.dispatchEvent(ev(type));
 }
 
-// 3) VPN access pivot using `contains`
-async function scenario_VPN_contains() {
-  g.disableTopButtons?.(true);
+async function click(el){
+  if(!el) return;
 
-  await addTargetQuick("VPN Appliance");
-  await addTargetQuick("Internal Network");
-  await addTargetQuick("Admin Console");
-  await toggleFinal("Admin Console");
-
-  await addAttackerQuick("VPN Exploit");
-  await setEntries("VPN Exploit", ["VPN Appliance"]);
-
-  await addLink("contains", "VPN Appliance", ["Internal Network"]);
-  await addLink("direct", "Internal Network", ["Admin Console"]);
-
-  const inc = g.el("includeContains");
-  if (inc && !inc.checked) {
-    await g.moveToEl(inc);
-    await g.click(inc);
+  // Hard block: if element is in list → skip
+  if(isInsideList(el)){
+    console.warn('[sim] skipped click inside list:',el);
+    return;
   }
 
-  await computeAndOpenFirstDiagram();
-  g.disableTopButtons?.(false);
+  await moveToEl(el);
+  await dispatchMouseSequence(el,'click');
+  await wait(80);
 }
 
-// 4) Ransomware laterally spreading to multiple finals
-async function scenario_Ransomware_Spread() {
-  g.disableTopButtons?.(true);
-
-  await addTargetQuick("User Workstation");
-  await addTargetQuick("File Server");
-  await addTargetQuick("Domain Controller");
-  await addTargetQuick("Backup Server");
-  await addTargetQuick("Admin Console");
-
-  await toggleFinal("Admin Console");
-  await toggleFinal("Backup Server");
-
-  await addAttackerQuick("Ransomware Operator");
-  await setEntries("Ransomware Operator", ["User Workstation"]);
-
-  await addLink("lateral", "User Workstation", [
-    "File Server",
-    "Domain Controller",
-  ]);
-  await addLink("direct", "File Server", ["Backup Server"]);
-  await addLink("direct", "Domain Controller", ["Admin Console"]);
-
-  await computeAndOpenFirstDiagram();
-  g.disableTopButtons?.(false);
+async function dblclick(el){
+  if(!el) return;
+  await moveToEl(el);
+  await dispatchMouseSequence(el,'click');
+  await wait(60);
+  await dispatchMouseSequence(el,'click');
+  await wait(120);
 }
 
-// 5) Supply-chain compromise with dual entry points
-async function scenario_SupplyChain_DualEntry() {
-  g.disableTopButtons?.(true);
+/* =====================================================
+   Keyboard and select helpers
+   ===================================================== */
 
-  await addTargetQuick("Web Server DMZ");
-  await addTargetQuick("Email Gateway");
-  await addTargetQuick("Internal Network");
-  await addTargetQuick("Build Server");
-  await addTargetQuick("Admin Console");
-  await toggleFinal("Admin Console");
+async function typeChar(inp,ch){
+  const key = ch;
+  const mk = e=>new KeyboardEvent(e,{ bubbles:true, cancelable:true, key });
+  inp.dispatchEvent(mk('keydown'));
+  inp.dispatchEvent(mk('keypress'));
 
-  await addAttackerQuick("Supply Chain Threat");
-  await setEntries("Supply Chain Threat", [
-    "Web Server DMZ",
-    "Email Gateway",
-  ]);
+  const v = inp.value ?? '';
+  inp.value = v+ch;
+  inp.dispatchEvent(new Event('input',{bubbles:true}));
+  inp.dispatchEvent(new Event('change',{bubbles:true}));
 
-  await addLink("contains", "Internal Network", ["Build Server"]);
-  await addLink("direct", "Web Server DMZ", ["Internal Network"]);
-  await addLink("direct", "Email Gateway", ["Internal Network"]);
-  await addLink("lateral", "Build Server", ["Admin Console"]);
+  inp.dispatchEvent(mk('keyup'));
+  await wait(40);
+}
 
-  const inc = g.el("includeContains");
-  if (inc && !inc.checked) {
-    await g.moveToEl(inc);
-    await g.click(inc);
+async function typeInto(inp,text,perChar=40){
+  if(!inp) return;
+  await moveToEl(inp);
+  await click(inp);
+  for(const ch of String(text)) await typeChar(inp,ch);
+  await wait(120);
+}
+
+function selectByText(sel,text){
+  const o = [...sel.options].find(o=>
+    o.textContent.trim().toLowerCase() === String(text).trim().toLowerCase()
+  );
+  if(o){
+    sel.value=o.value;
+    sel.dispatchEvent(new Event('change',{bubbles:true}));
   }
-
-  await computeAndOpenFirstDiagram();
-  g.disableTopButtons?.(false);
 }
 
-// 6) Worm lateral loop, pruned to final
-async function scenario_Loop_Prune() {
-  g.disableTopButtons?.(true);
-
-  await addTargetQuick("Host A");
-  await addTargetQuick("Host B");
-  await addTargetQuick("Host C");
-  await addTargetQuick("Ops Server");
-  await addTargetQuick("Admin Console");
-  await toggleFinal("Admin Console");
-
-  await addAttackerQuick("Worm Operator");
-  await setEntries("Worm Operator", ["Host A"]);
-
-  await addLink("lateral", "Host A", ["Host B"]);
-  await addLink("lateral", "Host B", ["Host C"]);
-  await addLink("lateral", "Host C", ["Host A", "Ops Server"]);
-  await addLink("direct", "Ops Server", ["Admin Console"]);
-
-  await computeAndOpenFirstDiagram();
-  g.disableTopButtons?.(false);
+function multiSelectByTexts(sel,texts){
+  const want=new Set(texts.map(s=>s.toLowerCase().trim()));
+  [...sel.options].forEach(o=>{
+    o.selected = want.has(o.textContent.trim().toLowerCase());
+  });
+  sel.dispatchEvent(new Event('change',{bubbles:true}));
 }
 
-/* ──────────────────────────────
-   Registering the Scenarios
-   ────────────────────────────── */
+/* =====================================================
+   Scroll helper
+   ===================================================== */
 
-addScenario("Web → DB → Admin Console", scenario_Web_DB_Console, 1);
-addScenario("Phishing lateral to DC", scenario_Phishing_Lateral, 1);
-addScenario("VPN + contains pivot", scenario_VPN_contains, 1);
-addScenario("Ransomware lateral spread", scenario_Ransomware_Spread, 1);
-addScenario("Supply-chain via Web & Email", scenario_SupplyChain_DualEntry, 1);
-addScenario("Lateral loop + prune to final", scenario_Loop_Prune, 1);
+function ensureInView(node,block='center'){
+  try{ node?.scrollIntoView({behavior:'smooth',block}); }catch{}
+}
 
-// End of file
+/* =====================================================
+   Default fallback scenario
+   ===================================================== */
+
+registerScenario('Demo Scenario', async () => {
+  const b=$('btnFindPaths');
+  if(!b) return;
+  await moveToEl(b);
+  await click(b);
+  await wait(300);
+});
+
+/* =====================================================
+   Default export
+   ===================================================== */
+
+export default {
+  registerScenario,
+  runSimulation,
+  runRandomScenario,
+  runScenario,
+  SCENARIOS,
+  disableTopButtons,
+  enableTopButtons,
+  g
+};
