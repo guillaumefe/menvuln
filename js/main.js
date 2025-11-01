@@ -212,6 +212,7 @@ async function init() {
   // Playback disabled by default until a simulation is started
   setPlaybackEnabled(false);
   setPlayPauseVisual(false);
+  playback_setDataset([]);
   playback_renderCurrent();
   playback_updateButtons();
 }
@@ -764,25 +765,28 @@ function playback_computeIfNeededAndStart() {
 /* Wire dataset+simulation playback controls (single source of truth)         */
 /* -------------------------------------------------------------------------- */
 function wirePlaybackControls() {
-  const btnPP = el('btnPlayPause');
-  const btnStop = el('btnStop');
-  const btnRestart = el('btnRestart');
-  const btnStepBack = el('btnStepBack');
-  const btnStepForward = el('btnStepForward');
-  const speed = el('simSpeed');
+  const btnPP         = el('btnPlayPause');
+  const btnStop       = el('btnStop');
+  const btnRestart    = el('btnRestart');
+  const btnStepBack   = el('btnStepBack');
+  const btnStepForward= el('btnStepForward');
+  const speed         = el('simSpeed');
 
+  // Play / Pause
   if (btnPP) {
     btnPP.onclick = () => {
-      if (typeof simIsRunning === 'function' && simIsRunning()) {
-        if (typeof simIsPaused === 'function' && simIsPaused()) {
+      if (simIsRunning && simIsRunning()) {
+        if (simIsPaused && simIsPaused()) {
           try { simPlay(); } catch {}
           setPlayPauseVisual(true);
         } else {
           try { simPause(); } catch {}
           setPlayPauseVisual(false);
         }
+        playback_updateButtons();
         return;
       }
+      // Dataset playback
       if (playback.playing) {
         playback_pause();
       } else {
@@ -793,76 +797,102 @@ function wirePlaybackControls() {
           playback_play();
         }
       }
+      playback_updateButtons();
     };
   }
-  if (btnStop) btnStop.onclick = () => {
-    if (simIsRunning && simIsRunning()) {
-      try { simStop(); } catch {}
-      resetForFreshSimulation();
-      return;
-    }
-    playback_stop();
-  };
-  if (btnRestart) btnRestart.onclick = async () => {
-    if (simIsRunning && simIsRunning()) {
-      // 1) Wipe complet
-      resetForFreshSimulation();
-      // 2) Relancer la simulation (mêmes signaux visuels que le bouton "Simulation")
-      try {
-        disableTopButtons(true);
-        setPlaybackEnabled(true);
-        setPlayPauseVisual(true);
-        const btn = el('btnSimu');
-        if (btn) { btn.textContent = 'Simulating…'; btn.disabled = true; }
-        await runSimulation({ renderCallback: () => renderAllUI() });
-      } finally {
-        const btn = el('btnSimu');
-        if (btn) { btn.textContent = 'Simulation'; btn.disabled = false; }
-        enableTopButtons();
+
+  // Stop
+  if (btnStop) {
+    btnStop.onclick = () => {
+      if (simIsRunning && simIsRunning()) {
+        try { simStop(); } catch {}
+        try { simCleanupUI(); } catch {}
         setPlayPauseVisual(false);
         setPlaybackEnabled(false);
-        renderAllUI();
-        playback_resetToStart?.();
+        playback_updateButtons();
+        return;
       }
-      return;
-    }
-    // si pas de simulation en cours : restart ne fait que relire le dataset
-    playback_restart();
-  };
-  if (btnStepBack) btnStepBack.onclick = () => {
-    if (simIsRunning && simIsRunning()) {
-      try { simPause(); } catch {}
-      try { simStepBack(10); } catch {}
-      setPlayPauseVisual(false);
+      // Dataset playback stop
+      playback_stop();
       playback_updateButtons();
-      return;
-    }
-    playback_pause();
-    playback_stepBack();
-  };
+    };
+  }
 
-  if (btnStepForward) btnStepForward.onclick = () => {
-    if (simIsRunning && simIsRunning()) {
-      try { simPause(); } catch {}
-      try { simStepForward(10); } catch {}
-      setPlayPauseVisual(false);
+  if (btnRestart) {
+    btnRestart.onclick = async () => {
+      if (simIsRunning && simIsRunning()) {
+        try { simStop(); } catch {}
+        try { simCleanupUI(); } catch {}
+
+        try {
+          disableTopButtons(true);
+          setPlaybackEnabled(true);
+          setPlayPauseVisual(true);
+          const b = el('btnSimu');
+          if (b) { b.textContent = 'Simulating…'; b.disabled = true; }
+          await runSimulation({ renderCallback: () => renderAllUI() });
+        } finally {
+          const b = el('btnSimu');
+          if (b) { b.textContent = 'Simulation'; b.disabled = false; }
+          enableTopButtons();
+          setPlayPauseVisual(false);
+          setPlaybackEnabled(false);
+          renderAllUI();
+          playback_resetToStart?.();
+          playback_updateButtons();
+        }
+        return;
+      }
+      playback_restart();
       playback_updateButtons();
-      return;
-    }
-    playback_pause();
-    playback_stepForward();
-  };
+    };
+  }
 
+  // Step back
+  if (btnStepBack) {
+    btnStepBack.onclick = () => {
+      if (simIsRunning && simIsRunning()) {
+        try { simPause(); } catch {}
+        try { simStepBack(10); } catch {}
+        setPlayPauseVisual(false);
+        playback_updateButtons();
+        return;
+      }
+      playback_pause();
+      playback_stepBack();
+      playback_updateButtons();
+    };
+  }
+
+  // Step forward
+  if (btnStepForward) {
+    btnStepForward.onclick = () => {
+      if (simIsRunning && simIsRunning()) {
+        try { simPause(); } catch {}
+        try { simStepForward(10); } catch {}
+        setPlayPauseVisual(false);
+        playback_updateButtons();
+        return;
+      }
+      playback_pause();
+      playback_stepForward();
+      playback_updateButtons();
+    };
+  }
+
+  // Speed
   if (speed) {
     playback_setSpeed(speed.value || 1);
     try { simSetSpeed(parseFloat(speed.value || '1') || 1); } catch {}
-    const lab = el('simSpeedValue'); if (lab) lab.textContent = `×${(+speed.value || 1).toFixed(1)}`;
+    const lab = el('simSpeedValue');
+    if (lab) lab.textContent = `×${(+speed.value || 1).toFixed(1)}`;
     speed.addEventListener('input', () => {
       playback_setSpeed(speed.value);
       try { simSetSpeed(parseFloat(speed.value || '1') || 1); } catch {}
     });
   }
 
+  // État initial propre
   playback_updateButtons();
   playback_renderCurrent();
 }
