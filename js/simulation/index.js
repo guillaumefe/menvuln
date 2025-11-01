@@ -301,6 +301,11 @@ async function runScenarioObject(sc) {
   }
 }
 
+function removeCursor() {
+  const c = document.getElementById('__sim_cursor');
+  if (c) c.remove();
+}
+
 export async function runSimulation(opts = {}) {
   if (CTRL.running) return;     // avoid concurrent runs
   CTRL.stopRequested = false;
@@ -325,6 +330,7 @@ export async function runSimulation(opts = {}) {
 
   CTRL.running = false;
   g.disableTopButtons(false);
+  removeCursor();
 
   if (typeof opts.renderCallback === 'function') {
     try { opts.renderCallback(); } catch {}
