@@ -65,6 +65,17 @@ export function simStep() {
 /* ---------------- DOM helpers ---------------- */
 const $ = (id) => document.getElementById(id);
 
+// Re-add main toolbar togglers so main.js imports keep working
+export function disableTopButtons(disabled = true) {
+  ['btnSimu', 'btnFindPaths', 'btnExportODS', 'btnImportJSON', 'btnExportJSON'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.disabled = !!disabled;
+  });
+}
+export function enableTopButtons() {
+  disableTopButtons(false);
+}
+
 /* Sleep that honors pause/step/stop and speed */
 function sleep(ms) {
   const base = Math.max(0, +ms || 0);
@@ -224,15 +235,12 @@ export const g = {
   typeInto,
   selectByText,
   multiSelectByTexts,
-  disableTopButtons: (disabled = true) => {
-    ['btnSimu','btnFindPaths','btnExportODS','btnImportJSON','btnExportJSON'].forEach(id => {
-      const b = $(id); if (b) b.disabled = disabled;
-    });
-  },
+  disableTopButtons: (disabled = true) => disableTopButtons(disabled),
   ensureInView: (node, block = 'center') => {
     try { node?.scrollIntoView({ block, behavior: 'smooth' }); } catch {}
   }
 };
+
 
 /* =========================================================
    Scenario runner
