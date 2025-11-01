@@ -9,6 +9,7 @@ const SCENARIOS = [];
 export function registerScenario(name, fn, weight = 1) {
   SCENARIOS.push({ name, fn, weight: Math.max(0, +weight || 1) });
 }
+
 function pickScenario() {
   const total = SCENARIOS.reduce((s, x) => s + x.weight, 0);
   if (!total) return null;
@@ -25,13 +26,24 @@ const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 export function disableTopButtons(disabled = true) {
-  ['btnSimu', 'btnFindPaths', 'btnExportODS', 'btnImportJSON', 'btnExportJSON']
-    .forEach(id => { const b = $(id); if (b) b.disabled = disabled; });
+  [
+    'btnSimu',
+    'btnFindPaths',
+    'btnExportODS',
+    'btnImportJSON',
+    'btnExportJSON'
+  ].forEach(id => {
+    const b = $(id);
+    if (b) b.disabled = disabled;
+  });
 }
-export function enableTopButtons() { disableTopButtons(false); }
+
+export function enableTopButtons() {
+  disableTopButtons(false);
+}
 
 /* =========================================================
-   Gesture engine: move fake cursor, click, type, select
+   Gesture engine
    ========================================================= */
 
 const CURSOR_ID = '__sim_cursor';
@@ -72,7 +84,7 @@ async function moveToPoint(x, y, msPer100px = 120) {
     const nx = from.x + dx * t;
     const ny = from.y + dy * t;
     cur.style.left = `${nx}px`;
-    cur.style.top  = `${ny}px`;
+    cur.style.top = `${ny}px`;
     await sleep(dt);
   }
 }
@@ -85,15 +97,18 @@ async function moveToEl(node, offX = 6, offY = 6) {
   await moveToPoint(r.left + Math.min(r.width - 2, offX), r.top + Math.min(r.height - 2, offY));
 }
 
-function fireMouseSequence(node) {
+function fireMouse(node) {
   const r = node.getBoundingClientRect();
   const centerX = r.left + r.width / 2;
   const centerY = r.top + r.height / 2;
-  const evts = ['mousedown', 'mouseup', 'click'];
-  for (const type of evts) {
+  for (const type of ['mousedown', 'mouseup', 'click']) {
     node.dispatchEvent(new MouseEvent(type, {
-      bubbles: true, cancelable: true, view: window,
-      clientX: centerX, clientY: centerY, button: 0
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: centerX,
+      clientY: centerY,
+      button: 0
     }));
   }
 }
@@ -101,7 +116,7 @@ function fireMouseSequence(node) {
 async function click(node, offX = 6, offY = 6) {
   if (!node) return;
   await moveToEl(node, offX, offY);
-  fireMouseSequence(node);
+  fireMouse(node);
   await sleep(80);
 }
 
@@ -120,9 +135,10 @@ async function typeInto(input, text, perCharMs = 28) {
 
 function selectByText(selectEl, text) {
   if (!selectEl) return;
-  const s = String(text).toLowerCase();
+  const target = String(text).toLowerCase();
   for (const opt of selectEl.options) {
-    if (opt.textContent.toLowerCase() === s) {
+    if (opt.textContent.toLowerCase() === target) {
+      opt.selected = true;
       selectEl.value = opt.value;
       selectEl.dispatchEvent(new Event('change', { bubbles: true }));
       return;
@@ -134,13 +150,11 @@ function multiSelectByTexts(selectEl, labels = []) {
   if (!selectEl) return;
   const wanted = new Set(labels.map(x => String(x).toLowerCase()));
   for (const opt of selectEl.options) {
-    const on = wanted.has(opt.textContent.toLowerCase());
-    opt.selected = on;
+    opt.selected = wanted.has(opt.textContent.toLowerCase());
   }
   selectEl.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-/* expose the gesture helpers (used by scenarios) */
 export const g = {
   el: (id) => document.getElementById(id),
   wait: sleep,
@@ -156,7 +170,7 @@ export const g = {
 };
 
 /* =========================================================
-   Scenario runners
+   Scenario runner
    ========================================================= */
 
 async function runScenarioObject(sc) {
@@ -164,7 +178,7 @@ async function runScenarioObject(sc) {
   try {
     await sc.fn(g);
   } catch (e) {
-    console.error('[simulation] scenario error:', e);
+    console.error(e);
     alert(e?.message || 'Simulation error');
   } finally {
     disableTopButtons(false);
@@ -173,13 +187,19 @@ async function runScenarioObject(sc) {
 
 export async function runRandomScenario() {
   const sc = pickScenario();
-  if (!sc) { alert('No simulation scenarios registered.'); return; }
+  if (!sc) {
+    alert('No simulation scenarios available.');
+    return;
+  }
   return runScenarioObject(sc);
 }
 
 export async function runScenario(name) {
   const sc = SCENARIOS.find(s => s.name === name);
-  if (!sc) { alert(`Scenario not found: ${name}`); return; }
+  if (!sc) {
+    alert(`Scenario not found: ${name}`);
+    return;
+  }
   return runScenarioObject(sc);
 }
 
@@ -188,11 +208,10 @@ export async function runSimulation(opts = {}) {
   else await runRandomScenario();
 
   if (typeof opts.renderCallback === 'function') {
-    try { opts.renderCallback(); } catch (e) { console.error(e); }
+    try { opts.renderCallback(); } catch (e) {}
   }
 }
 
-/* default export for convenience */
 export default {
   registerScenario,
   runSimulation,
