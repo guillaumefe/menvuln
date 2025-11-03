@@ -4,7 +4,7 @@
  * Converts runtime structures (Sets) to plain arrays for persistence.
  */
 
-const KEY = 'envuln-lite-store';
+const KEY = 'menvuln-lite-store';
 const CURRENT_VERSION = 4;
 
 /* ------------ Public API ------------ */
@@ -54,7 +54,7 @@ export function exportJSON(state) {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `envuln-export-${ts}.json`;
+  a.download = `menvuln-export-${ts}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -229,7 +229,7 @@ export function exportJSONSelective(state, domains = ['all']) {
   const ts = new Date().toISOString().replace(/[:.]/g,'-');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `envuln-export-${ts}.json`;
+  a.download = `menvuln-export-${ts}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();

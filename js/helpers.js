@@ -1,5 +1,5 @@
 /*************************************************************
- * helpers.js — tiny shared utilities for Envuln
+ * helpers.js — tiny shared utilities for Menvuln
  * ⚙️ 100% client-side / no UI logic / no state mutations
  *************************************************************/
 

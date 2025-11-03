@@ -231,7 +231,7 @@ export function exportODS(state, options = {}) {
     [xml],
     { type: 'application/vnd.oasis.opendocument.spreadsheet' }
   );
-  const filename = `envuln-export-${new Date().toISOString().replace(/[:.]/g,'-')}.fods`;
+  const filename = `menvuln-export-${new Date().toISOString().replace(/[:.]/g,'-')}.fods`;
 
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);

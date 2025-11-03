@@ -1,5 +1,5 @@
 // js/paths.js
-// Graph path enumeration for ENVULN
+// Graph path enumeration for Menvuln
 
 /**
  * Build a map id -> target object for quick lookups.

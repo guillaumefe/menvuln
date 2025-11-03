@@ -41,7 +41,7 @@ let lastMeta = { cycles: false, truncated: false };
 /* -------------------------------------------------------------------------- */
 /* UI selection store                                                         */
 /* -------------------------------------------------------------------------- */
-const UI_STORE_KEY = 'envuln-lite-ui';
+const UI_STORE_KEY = 'menvuln-lite-ui';
 function saveUISelection(){
   try {
     localStorage.setItem(UI_STORE_KEY, JSON.stringify({
@@ -893,7 +893,7 @@ function resetForFreshSimulation() {
   const svgSizeEl1 = el('svgSize'); if (svgSizeEl1) svgSizeEl1.textContent = '—';
   const statusEl  = el('status');   if (statusEl)  statusEl.textContent = '—';
 
-  try { localStorage.removeItem('envuln-lite-store'); } catch {}
+  try { localStorage.removeItem('menvuln-lite-store'); } catch {}
   try { localStorage.removeItem(UI_STORE_KEY); } catch {}
 
   renderAllUI();
@@ -1222,7 +1222,7 @@ function playback_setExternalResults(results) {
 /* -------------------------------------------------------------------------- */
 /* Boot                                                                       */
 /* -------------------------------------------------------------------------- */
-window.__envuln_boot = {
+window.__menvuln_boot = {
   State: StateMod.State,
   computeAllPaths,
   playback_setExternalResults

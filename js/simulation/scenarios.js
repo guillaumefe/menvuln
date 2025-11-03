@@ -47,7 +47,7 @@ async function clickAddLinkButton() {
   for (const id of tryIds) { const n = g.el(id); if (n) { btn = n; break; } }
 
   // snapshot avant
-  const S = window.__envuln_boot?.State || window.State || StateMod.State;
+  const S = window.__menvuln_boot?.State || window.State || StateMod.State;
   const before = __edgeCount(S);
 
   if (btn) {
