@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>ENVULN — Threat Path Explorer</title>
+  <link rel="stylesheet" href="./styles/app.css">
+</head>
+
+<body>
+<div class="wrap">
+
+  <!-- LEFT PANEL — Add + Manage Entities -->
+  <div class="panel" id="panelEntities">
+    <h3>Add & Manage</h3>
+    <div class="small">Add, rename, or delete entities here.</div>
+
+    <!-- Add forms -->
+    <div class="form-block">
+      <label>New attacker</label>
+      <div class="row">
+        <input id="attackerName" placeholder="Attacker name">
+        <button id="btnAddAttacker">Add</button>
+      </div>
+    </div>
+
+    <div class="form-block">
+      <label>New target</label>
+      <div class="row">
+        <input id="targetName" placeholder="Target name">
+        <button id="btnAddTarget">Add</button>
+      </div>
+    </div>
+
+    <div class="form-block">
+      <label>New vulnerability</label>
+      <div class="row">
+        <input id="vulnName" placeholder="Vulnerability name">
+        <button id="btnAddVuln">Add</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:8px">
+      <button id="btnResetAll" class="ghost">Reset all</button>
+    </div>
+
+    <hr>
+
+    <!-- Entity Lists -->
+    <h3>Attackers</h3>
+    <div id="attackerList" class="list"></div>
+
+    <h3>Attacker targets</h3>
+    <div id="targetList" class="list"></div>
+
+    <h3>Vulnerabilities</h3>
+    <div id="vulnList" class="list"></div>
+  </div>
+
+  <!-- CENTER PANEL — Associations / Compute / Results -->
+  <div class="panel" id="panelAssociations">
+    <h3>Configuration & Exploration</h3>
+
+    <div class="row ceiling-row">
+      <!-- (Simulation speed and Path limit moved to the right panel) -->
+    </div>
+
+    <hr>
+
+    <!-- Attacker selection -->
+    <h3>Attacker selection</h3>
+    <div class="small">Choose the current attacker.</div>
+    <div class="row">
+      <select id="selAttacker"></select>
+    </div>
+
+    <hr>
+
+    <!-- Entry points selection -->
+    <h3>Attacker entry points</h3>
+    <div class="small">Select targets that act as entry points for the attacker.</div>
+    <div class="row">
+      <select id="selEntriesAll" multiple size="6"></select>
+    </div>
+    <div class="row">
+      <button id="btnClearEntries" class="ghost">Clear selection</button>
+    </div>
+
+    <hr>
+
+    <!-- Exit points selection -->
+    <h3>Attacker exit points</h3>
+    <div class="small">Select targets that act as exit points for the attacker.</div>
+    <div class="row">
+      <select id="selExitsAll" multiple size="6"></select>
+    </div>
+    <div class="row">
+      <button id="btnClearExits" class="ghost">Clear selection</button>
+    </div>
+
+    <hr>
+
+    <!-- Vulnerability association -->
+    <h3>Vulnerabilities</h3>
+    <div class="small">Pick an element, then select/unselect the vulnerabilities to associate.</div>
+
+    <div class="row">
+      <div class="col">
+        <label>Element to edit</label>
+        <select id="selVulnElement">
+          <!-- filled by JS -->
+        </select>
+      </div>
+
+      <div class="col">
+        <label>Vulnerabilities (multi)</label>
+        <select id="selVulnsForElement" multiple size="6"></select>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="btnClearVulnSelection" class="ghost">Clear selection</button>
+    </div>
+
+    <hr>
+
+    <!-- Links -->
+    <h3>Links between targets</h3>
+    <div class="row">
+      <select id="linkSource"></select>
+      <select id="linkDest" multiple size="4"></select>
+      <select id="linkType">
+        <option value="direct">direct</option>
+        <option value="lateral">lateral</option>
+        <option value="contains">contains</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <button id="btnClearLinkSelection" class="ghost">Clear selection</button>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="includeLateral" checked> include lateral</label>
+      <label><input type="checkbox" id="includeContains" checked> include contains</label>
+    </div>
+
+    <div id="linksInspector" class="small"></div>
+
+    <hr>
+
+    <!-- Actions -->
+    <div class="row top-actions">
+      <button id="btnFindPaths">Compute paths</button>
+      <button id="btnExportODS" class="ghost">Export ODS</button>
+      <button id="btnImportJSON" class="ghost">Import JSON</button>
+      <button id="btnExportJSON" class="ghost">Export JSON</button>
+      <button id="btnSimu" class="ghost">Simulation</button>
+      <input type="file" id="fileIn" accept="application/json" hidden>
+      <span id="status" class="small">—</span>
+    </div>
+
+    <hr>
+
+    <!-- Results -->
+    <h3 style="display:flex;align-items:center;gap:10px">
+      Results
+      <label class="small" style="display:inline-flex;align-items:center;gap:6px">
+        <input type="checkbox" id="chkOnlyVuln">
+        Vulnerable paths only
+      </label>
+    </h3>
+
+    <div id="results" class="path-list"></div>
+  </div>
+
+  <!-- RIGHT PANEL — Tutorial + Configuration + Diagram -->
+  <div class="panel" id="panelDetailsRight">
+    <h3>Tutorial</h3>
+    <ol id="tutorial" class="small">
+      <li>Add attackers, targets, and vulnerabilities in the left panel.</li>
+      <li>Select the current attacker from “Attacker selection”.</li>
+      <li>Choose attacker entry points, then use “Clear selection” if needed.</li>
+      <li>Choose attacker exit points, then use “Clear selection” if needed.</li>
+      <li>Select an element and pick vulnerabilities to associate; use “Clear selection” to reset.</li>
+      <li>Configure links between targets; use “Clear selection” to reset the link pickers.</li>
+      <li>Adjust path visibility (include lateral/contains) using the checkboxes.</li>
+      <li>Click “Compute paths” to generate results.</li>
+      <li>Select a path to view the attack diagram.</li>
+      <li>Use the playback controls to play, pause, stop, restart, step back, or step forward the simulation.</li>
+      <li>Export data as needed (JSON/ODS).</li>
+    </ol>
+
+    <hr>
+
+    <!-- Playback controls (above simulation speed) -->
+    <div class="row" id="playbackRow" style="justify-content:center;gap:10px">
+      <button id="btnStepBack" class="ghost" title="Step back" aria-label="Step back">⏮</button>
+      <button id="btnPlayPause" title="Play/Pause" aria-label="Play or pause">▶</button>
+      <button id="btnStepForward" class="ghost" title="Step forward" aria-label="Step forward">⏭</button>
+      <button id="btnStop" class="ghost" title="Stop" aria-label="Stop">⏹</button>
+      <button id="btnRestart" class="ghost" title="Restart" aria-label="Restart">↺</button>
+    </div>
+    
+    <div class="row">
+      <div class="col speed-col">
+        <label for="simSpeed">Simulation speed</label>
+        <input id="simSpeed" type="range" min="0.2" max="3" step="0.1" value="1">
+        <span id="simSpeedValue">×1.0</span>
+      </div>
+    </div>
+
+    <hr>
+
+    <div class="row ceiling-row">
+      <label for="maxPaths">Path limit</label>
+      <input type="number" id="maxPaths" min="100" value="2000">
+    </div>
+
+    <hr>
+
+    <h3>Attack diagram</h3>
+    <div id="diagramBox" class="uml"><div class="small">Select a path → Diagram</div></div>
+
+    <div class="row">
+      <button id="btnDownloadSVG" class="ghost">Download SVG</button>
+      <span id="svgSize" class="small">—</span>
+    </div>
+  </div>
+
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
